@@ -1,0 +1,1 @@
+{"sessionId":"d78d18","runId":"drizzle-config","hypothesisId":"B","location":"drizzle.config.ts","message":"DATABASE_URL summary when drizzle config loads","data":{"length":90,"hasQuote":false,"hostPart":"@db.bbpongibcosbdyjuothq.supabase.co:5432/postgres"},"timestamp":1772256274242}

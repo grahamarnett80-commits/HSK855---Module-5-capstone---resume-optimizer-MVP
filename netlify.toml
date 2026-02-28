@@ -1,0 +1,9 @@
+# Resume Optimizer MVP - Netlify deployment
+# https://docs.netlify.com/build/frameworks/framework-setup-guides/nextjs/
+# Connect the repo in Netlify and set the framework to Next.js (auto-detected).
+
+[build]
+  command = "npm run build"
+
+[build.environment]
+  NODE_VERSION = "20"

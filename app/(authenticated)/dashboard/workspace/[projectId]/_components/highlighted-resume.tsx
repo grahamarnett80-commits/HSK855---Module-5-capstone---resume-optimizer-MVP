@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useRef, Fragment } from "react"
+import { useEffect, useRef, useMemo, Fragment } from "react"
 import { Button } from "@/components/ui/button"
-import { Check, X } from "lucide-react"
+import { Check, X, MessageCircleQuestion } from "lucide-react"
 import type { SuggestionItem } from "@/actions/suggestions"
 
 const TYPE_COLORS: Record<string, string> = {
@@ -24,10 +24,14 @@ interface HighlightedResumeProps {
   onAccept: (suggestion: SuggestionItem) => void
   onDismiss: (suggestion: SuggestionItem) => void
   onClickSuggestionArea: (id: string) => void
+  onAskAboutBracket?: (bracketText: string) => void
 }
+
+type SegmentKind = "plain" | "suggestion" | "bracket"
 
 interface TextSegment {
   text: string
+  kind: SegmentKind
   suggestion: SuggestionItem | null
 }
 
@@ -39,46 +43,49 @@ function buildSegments(
     (s) => s.originalText && content.includes(s.originalText)
   )
 
-  if (matchable.length === 0) {
-    return [{ text: content, suggestion: null }]
-  }
+  type Region = { start: number; end: number; kind: SegmentKind; suggestion: SuggestionItem | null }
+  const regions: Region[] = []
 
-  type Match = { start: number; end: number; suggestion: SuggestionItem }
-  const matches: Match[] = []
   for (const s of matchable) {
     const idx = content.indexOf(s.originalText)
     if (idx !== -1) {
-      matches.push({ start: idx, end: idx + s.originalText.length, suggestion: s })
+      regions.push({ start: idx, end: idx + s.originalText.length, kind: "suggestion", suggestion: s })
     }
   }
-  matches.sort((a, b) => a.start - b.start)
 
-  const deduped: Match[] = []
-  for (const m of matches) {
+  const bracketRe = /\[[^\]]{2,}\]/g
+  let match: RegExpExecArray | null
+  while ((match = bracketRe.exec(content)) !== null) {
+    regions.push({ start: match.index, end: match.index + match[0].length, kind: "bracket", suggestion: null })
+  }
+
+  regions.sort((a, b) => a.start - b.start)
+
+  const deduped: Region[] = []
+  for (const r of regions) {
     const last = deduped[deduped.length - 1]
-    if (!last || m.start >= last.end) {
-      deduped.push(m)
+    if (!last || r.start >= last.end) {
+      deduped.push(r)
     }
   }
 
   const segments: TextSegment[] = []
   let cursor = 0
-  for (const m of deduped) {
-    if (m.start > cursor) {
-      segments.push({ text: content.slice(cursor, m.start), suggestion: null })
+  for (const r of deduped) {
+    if (r.start > cursor) {
+      segments.push({ text: content.slice(cursor, r.start), kind: "plain", suggestion: null })
     }
-    segments.push({
-      text: content.slice(m.start, m.end),
-      suggestion: m.suggestion
-    })
-    cursor = m.end
+    segments.push({ text: content.slice(r.start, r.end), kind: r.kind, suggestion: r.suggestion })
+    cursor = r.end
   }
   if (cursor < content.length) {
-    segments.push({ text: content.slice(cursor), suggestion: null })
+    segments.push({ text: content.slice(cursor), kind: "plain", suggestion: null })
   }
 
   return segments
 }
+
+export const hasBracketPlaceholders = (text: string) => /\[[^\]]{2,}\]/.test(text)
 
 export function HighlightedResume({
   content,
@@ -86,7 +93,8 @@ export function HighlightedResume({
   activeSuggestionId,
   onAccept,
   onDismiss,
-  onClickSuggestionArea
+  onClickSuggestionArea,
+  onAskAboutBracket
 }: HighlightedResumeProps) {
   const activeRef = useRef<HTMLDivElement>(null)
 
@@ -96,12 +104,36 @@ export function HighlightedResume({
     }
   }, [activeSuggestionId])
 
-  const segments = buildSegments(content, suggestions)
+  const segments = useMemo(
+    () => buildSegments(content, suggestions),
+    [content, suggestions]
+  )
 
   return (
     <div className="mt-1 flex-1 overflow-auto rounded border bg-muted/30 p-3 font-mono text-sm whitespace-pre-wrap leading-relaxed">
       {segments.map((seg, i) => {
-        if (!seg.suggestion) {
+        if (seg.kind === "bracket") {
+          return (
+            <span
+              key={i}
+              className="inline-flex items-center gap-0.5 rounded border border-orange-400 bg-orange-400/20 px-0.5 font-semibold text-orange-700 animate-pulse dark:text-orange-300"
+              title="Placeholder — update this with your information"
+            >
+              {seg.text}
+              {onAskAboutBracket && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onAskAboutBracket(seg.text) }}
+                  className="ml-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-orange-500/20 text-orange-700 hover:bg-orange-500/40 dark:text-orange-300"
+                  title="Ask AI for help filling this in"
+                >
+                  <MessageCircleQuestion className="h-2.5 w-2.5" />
+                </button>
+              )}
+            </span>
+          )
+        }
+
+        if (seg.kind === "plain" || !seg.suggestion) {
           return <Fragment key={i}>{seg.text}</Fragment>
         }
 

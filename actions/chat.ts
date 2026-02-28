@@ -25,9 +25,16 @@ export async function getChatMessages(
   }
 }
 
+export type SuggestionContext = {
+  text: string
+  originalText: string
+  suggestedText: string
+} | null
+
 export async function sendChatMessage(
   projectId: string,
-  content: string
+  content: string,
+  suggestionContext?: SuggestionContext
 ): Promise<{ success: boolean; reply?: string; error?: string }> {
   const user = await currentUser()
   if (!user) return { success: false, error: "Not authenticated" }
@@ -50,7 +57,12 @@ export async function sendChatMessage(
   const resumeContent = latestVersion?.content ?? ""
   const jobText = project.jobPostingText ?? ""
 
-  const reply = await runChat(jobText, resumeContent, messages)
+  let contextPrefix = ""
+  if (suggestionContext) {
+    contextPrefix = `\n\n[SUGGESTION CONTEXT]\nSuggestion: ${suggestionContext.text}\nOriginal resume text: ${suggestionContext.originalText}\nProposed change: ${suggestionContext.suggestedText}\n[/SUGGESTION CONTEXT]\n`
+  }
+
+  const reply = await runChat(jobText, resumeContent + contextPrefix, messages)
   await db.insert(chatMessages).values({ projectId, role: "assistant", content: reply })
 
   return { success: true, reply }

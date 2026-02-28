@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Group, Panel, Separator } from "react-resizable-panels"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import {
   uploadResume,
@@ -13,11 +13,11 @@ import {
 } from "@/actions/resume-upload"
 import { scoreResumeVersion } from "@/actions/resume-score"
 import { getSuggestionsForVersion, generateSuggestionsForVersion, type SuggestionItem } from "@/actions/suggestions"
-import { getChatMessages, sendChatMessage } from "@/actions/chat"
+import { getChatMessages, sendChatMessage, type SuggestionContext } from "@/actions/chat"
 import { createNewVersionFromContent } from "@/actions/resume-save-version"
 import { getVersionsByProjectId } from "@/actions/resume-versions"
-import { Loader2, Send, Upload, Sparkles, Save, Pencil, Eye, Check, X, CheckCheck } from "lucide-react"
-import { HighlightedResume } from "./highlighted-resume"
+import { Loader2, Send, Upload, Sparkles, Save, Check, X, CheckCheck, Undo2, MessageCircleQuestion } from "lucide-react"
+import { hasBracketPlaceholders } from "./highlighted-resume"
 import { HighlightedJobPosting } from "./highlighted-job-posting"
 
 type Version = {
@@ -67,8 +67,8 @@ export function WorkspaceView({
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  const [reviewMode, setReviewMode] = useState(false)
   const [activeSuggestionId, setActiveSuggestionId] = useState<string | null>(null)
+  const [undoStack, setUndoStack] = useState<{ suggestion: SuggestionItem; contentBefore: string }[]>([])
 
   const currentVersion = versions.find((v) => v.id === selectedVersionId)
 
@@ -87,7 +87,6 @@ export function WorkspaceView({
     const res = await getSuggestionsForVersion(selectedVersionId)
     if (res.success && res.suggestions) {
       setSuggestions(res.suggestions)
-      if (res.suggestions.length > 0) setReviewMode(true)
     }
   }, [selectedVersionId])
 
@@ -105,43 +104,91 @@ export function WorkspaceView({
   }, [loadChat])
 
   useEffect(() => {
-    if (currentVersion) setResumeContent(currentVersion.content)
+    if (currentVersion) {
+      setResumeContent(currentVersion.content)
+      setUndoStack([])
+    }
   }, [currentVersion])
 
   function handleAcceptSuggestion(s: SuggestionItem) {
     if (s.originalText && s.suggestedText && resumeContent.includes(s.originalText)) {
+      const contentBefore = resumeContent
       setResumeContent((prev) => prev.replace(s.originalText, s.suggestedText))
-      toast.success("Suggestion applied.")
+      setUndoStack((prev) => [...prev, { suggestion: s, contentBefore }])
+      toast.success("Suggestion applied.", {
+        action: {
+          label: "Undo",
+          onClick: () => handleUndoLast()
+        },
+        duration: 8000
+      })
     } else {
       toast.error("Could not find the original text in your resume. It may have already been modified.")
     }
     const remaining = suggestions.filter((x) => x.id !== s.id)
     setSuggestions(remaining)
     setActiveSuggestionId(null)
-    if (remaining.length === 0) setReviewMode(false)
   }
 
   function handleDismissSuggestion(s: SuggestionItem) {
     const remaining = suggestions.filter((x) => x.id !== s.id)
     setSuggestions(remaining)
     setActiveSuggestionId(null)
-    if (remaining.length === 0) setReviewMode(false)
   }
 
   function handleAcceptAll() {
+    const contentBefore = resumeContent
     let content = resumeContent
     let applied = 0
+    const appliedSuggestions: SuggestionItem[] = []
     for (const s of suggestions) {
       if (s.originalText && s.suggestedText && content.includes(s.originalText)) {
         content = content.replace(s.originalText, s.suggestedText)
+        appliedSuggestions.push(s)
         applied++
       }
     }
     setResumeContent(content)
+    if (applied > 0) {
+      setUndoStack((prev) => [
+        ...prev,
+        ...appliedSuggestions.map((s) => ({ suggestion: s, contentBefore }))
+      ])
+    }
     setSuggestions([])
     setActiveSuggestionId(null)
-    setReviewMode(false)
-    toast.success(`Applied ${applied} suggestion${applied !== 1 ? "s" : ""}.`)
+    toast.success(`Applied ${applied} suggestion${applied !== 1 ? "s" : ""}.`, {
+      action: {
+        label: "Undo all",
+        onClick: () => handleUndoBatch(applied)
+      },
+      duration: 8000
+    })
+  }
+
+  function handleUndoLast() {
+    setUndoStack((prev) => {
+      if (prev.length === 0) return prev
+      const last = prev[prev.length - 1]
+      setResumeContent(last.contentBefore)
+      setSuggestions((s) => [...s, last.suggestion])
+      toast.info("Change reversed.")
+      return prev.slice(0, -1)
+    })
+  }
+
+  function handleUndoBatch(count: number) {
+    setUndoStack((prev) => {
+      if (prev.length === 0) return prev
+      const toUndo = prev.slice(-count)
+      const earliest = toUndo[0]
+      if (earliest) {
+        setResumeContent(earliest.contentBefore)
+        setSuggestions((s) => [...s, ...toUndo.map((u) => u.suggestion)])
+        toast.info(`Reversed ${toUndo.length} change${toUndo.length !== 1 ? "s" : ""}.`)
+      }
+      return prev.slice(0, -count)
+    })
   }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -201,15 +248,30 @@ export function WorkspaceView({
     setSuggestionsLoading(false)
     if (res.success && res.suggestions) {
       setSuggestions(res.suggestions)
-      if (res.suggestions.length > 0) setReviewMode(true)
     } else {
       toast.error(res.error)
     }
   }
 
-  async function handleSaveNewVersion() {
+  const [pendingSave, setPendingSave] = useState(false)
+
+  async function handleSaveNewVersion(bypassBracketCheck = false) {
     if (!resumeContent.trim()) {
       toast.error("Resume content is empty.")
+      return
+    }
+    if (!bypassBracketCheck && hasBracketPlaceholders(resumeContent)) {
+      setPendingSave(true)
+      const bracketMatches = resumeContent.match(/\[[^\]]{2,}\]/g) ?? []
+      toast.warning(`You have ${bracketMatches.length} unresolved placeholder${bracketMatches.length !== 1 ? "s" : ""} in your resume.`, {
+        description: "Placeholders like [Your achievement here] should be filled in before saving.",
+        action: {
+          label: "Save anyway",
+          onClick: () => handleSaveNewVersion(true)
+        },
+        duration: 10000
+      })
+      setPendingSave(false)
       return
     }
     setSaving(true)
@@ -247,12 +309,82 @@ export function WorkspaceView({
     }
   }
 
+  const chatInputRef = useRef<HTMLInputElement>(null)
+  const chatScrollRef = useRef<HTMLDivElement>(null)
+  const [chatSuggestionCtx, setChatSuggestionCtx] = useState<SuggestionContext>(null)
+  const [chatOpen, setChatOpen] = useState(false)
+
+  function openChat(input: string, ctx: SuggestionContext = null) {
+    setChatSuggestionCtx(ctx)
+    setChatInput(input)
+    setChatOpen(true)
+    setTimeout(() => chatInputRef.current?.focus(), 150)
+  }
+
+  function handleAskAboutSuggestion(s: SuggestionItem) {
+    openChat(`Regarding the suggestion: "${s.text}" — `, {
+      text: s.text,
+      originalText: s.originalText,
+      suggestedText: s.suggestedText
+    })
+  }
+
+  function handleAskAboutBracket(bracketText: string) {
+    openChat(`Help me fill in the placeholder ${bracketText} — what should I write here?`)
+  }
+
+  type ChatChange = { originalText: string; suggestedText: string }
+
+  function parseChatChange(reply: string): ChatChange | null {
+    const re = /```suggestion\s*\n([\s\S]*?)\n```/
+    const match = re.exec(reply)
+    if (!match) return null
+    try {
+      const parsed = JSON.parse(match[1])
+      if (parsed.originalText && parsed.suggestedText) return parsed as ChatChange
+    } catch { /* not valid JSON */ }
+    return null
+  }
+
+  function stripSuggestionBlock(reply: string): string {
+    return reply.replace(/```suggestion\s*\n[\s\S]*?\n```/, "").trim()
+  }
+
+  function handleApplyChatChange(change: ChatChange) {
+    if (resumeContent.includes(change.originalText)) {
+      const contentBefore = resumeContent
+      setResumeContent((prev) => prev.replace(change.originalText, change.suggestedText))
+      setUndoStack((prev) => [
+        ...prev,
+        {
+          suggestion: {
+            id: `chat-${Date.now()}`,
+            type: "other",
+            section: "",
+            text: "Chat suggestion",
+            originalText: change.originalText,
+            suggestedText: change.suggestedText,
+            jobPostingKeywords: []
+          },
+          contentBefore
+        }
+      ])
+      toast.success("Change applied from chat.", {
+        action: { label: "Undo", onClick: () => handleUndoLast() },
+        duration: 8000
+      })
+    } else {
+      toast.error("Could not find the original text in your resume.")
+    }
+  }
+
   async function handleSendChat() {
     const text = chatInput.trim()
     if (!text || chatLoading) return
     setChatInput("")
     setChatLoading(true)
-    const res = await sendChatMessage(project.id, text)
+    const res = await sendChatMessage(project.id, text, chatSuggestionCtx)
+    setChatSuggestionCtx(null)
     setChatLoading(false)
     if (res.success && res.reply) {
       setChatMessages((prev) => [
@@ -260,6 +392,7 @@ export function WorkspaceView({
         { role: "user", content: text },
         { role: "assistant", content: res.reply! }
       ])
+      setTimeout(() => chatScrollRef.current?.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior: "smooth" }), 100)
     } else {
       toast.error(res.error)
     }
@@ -296,19 +429,19 @@ export function WorkspaceView({
           <span className="text-muted-foreground text-sm">No versions yet</span>
         )}
         <div className="ml-auto flex gap-2">
-          {versions.length > 0 && (
+          {undoStack.length > 0 && (
             <Button
               type="button"
-              variant={reviewMode ? "default" : "outline"}
+              variant="outline"
               size="sm"
-              onClick={() => {
-                setReviewMode(!reviewMode)
-                if (reviewMode) setActiveSuggestionId(null)
-              }}
-              title={reviewMode ? "Switch to Edit mode" : "Switch to Review mode"}
+              onClick={handleUndoLast}
+              title="Undo last accepted suggestion"
             >
-              {reviewMode ? <Pencil className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              {reviewMode ? "Edit" : "Review"}
+              <Undo2 className="h-4 w-4" />
+              Undo
+              <span className="ml-0.5 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-muted px-1 text-[10px] font-bold">
+                {undoStack.length}
+              </span>
             </Button>
           )}
           <label className="cursor-pointer">
@@ -354,17 +487,6 @@ export function WorkspaceView({
                     <p>Upload a PDF or Word resume to get started.</p>
                     <p className="mt-1 text-xs">We'll extract the text and score it against the job posting.</p>
                   </div>
-                ) : reviewMode && suggestions.length > 0 ? (
-                  <HighlightedResume
-                    content={resumeContent}
-                    suggestions={suggestions}
-                    activeSuggestionId={activeSuggestionId}
-                    onAccept={handleAcceptSuggestion}
-                    onDismiss={handleDismissSuggestion}
-                    onClickSuggestionArea={(id) =>
-                      setActiveSuggestionId(activeSuggestionId === id ? null : id)
-                    }
-                  />
                 ) : (
                   <Textarea
                     className="mt-1 flex-1 min-h-0 resize-none font-mono text-sm"
@@ -400,145 +522,184 @@ export function WorkspaceView({
         </Panel>
         <Separator className="w-2 bg-border data-[resize-handle-active]:bg-primary/20" />
         <Panel defaultSize={50} minSize={20}>
-          <Group orientation="vertical">
-            <Panel defaultSize={75} minSize={20}>
-              <div className="flex h-full flex-col rounded-md border border-border bg-background shadow-sm m-1">
-                <div className="flex items-center justify-between border-b bg-muted px-3 py-1.5">
-                  <Label className="text-xs font-bold uppercase tracking-wide text-foreground">
-                    Suggestions
-                    {suggestions.length > 0 && (
-                      <span className="ml-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary/15 text-[10px] font-bold text-primary">
-                        {suggestions.length}
-                      </span>
-                    )}
-                  </Label>
-                  <div className="flex gap-1">
-                    {suggestions.length > 1 && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleAcceptAll}
-                        title="Accept all suggestions"
-                      >
-                        <CheckCheck className="h-4 w-4" />
-                        Accept all
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleGenerateSuggestions}
-                      disabled={suggestionsLoading || !selectedVersionId}
-                    >
-                      {suggestionsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                      Generate
-                    </Button>
-                  </div>
-                </div>
-                <ul className="flex-1 overflow-auto space-y-2 p-2">
-                  {suggestions.length === 0 && !suggestionsLoading && (
-                    <li className="text-muted-foreground text-sm">Generate suggestions to see improvements.</li>
-                  )}
-                  {suggestions.map((s) => {
-                    const isActive = activeSuggestionId === s.id
-                    return (
-                      <li
-                        key={s.id}
-                        className={`group cursor-pointer rounded border p-2 text-sm transition-colors ${
-                          isActive
-                            ? "border-primary bg-primary/5 ring-1 ring-primary/30"
-                            : "bg-muted/30 hover:bg-muted/50"
-                        }`}
-                        onClick={() => {
-                          setActiveSuggestionId(isActive ? null : s.id)
-                          if (!reviewMode) setReviewMode(true)
-                        }}
-                      >
-                        <div className="flex items-start gap-2">
-                          <SuggestionBadge type={s.type} />
-                          <span className="flex-1">{s.text}</span>
-                          <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 text-green-600 hover:bg-green-500/20"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleAcceptSuggestion(s)
-                              }}
-                              title="Accept"
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 text-red-600 hover:bg-red-500/20"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleDismissSuggestion(s)
-                              }}
-                              title="Dismiss"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </div>
-                        {isActive && s.originalText && (
-                          <div className="mt-2 space-y-1 text-xs">
-                            <div className="rounded bg-red-500/10 px-2 py-1 line-through decoration-red-400">
-                              {s.originalText}
-                            </div>
-                            <div className="rounded bg-green-500/10 px-2 py-1">
-                              {s.suggestedText}
-                            </div>
-                          </div>
-                        )}
-                      </li>
-                    )
-                  })}
-                </ul>
+          <div className="flex h-full flex-col rounded-md border border-border bg-background shadow-sm m-1">
+            <div className="flex items-center justify-between border-b bg-muted px-3 py-1.5">
+              <Label className="text-xs font-bold uppercase tracking-wide text-foreground">
+                Suggestions
+                {suggestions.length > 0 && (
+                  <span className="ml-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary/15 text-[10px] font-bold text-primary">
+                    {suggestions.length}
+                  </span>
+                )}
+              </Label>
+              <div className="flex gap-1">
+                {suggestions.length > 1 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleAcceptAll}
+                    title="Accept all suggestions"
+                  >
+                    <CheckCheck className="h-4 w-4" />
+                    Accept all
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleGenerateSuggestions}
+                  disabled={suggestionsLoading || !selectedVersionId}
+                >
+                  {suggestionsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  Generate
+                </Button>
               </div>
-            </Panel>
-            <Separator className="h-2 w-full bg-border data-[resize-handle-active]:bg-primary/20" />
-            <Panel defaultSize={25} minSize={10}>
-              <div className="flex h-full flex-col rounded-md border border-border bg-background shadow-sm m-1">
-                <div className="border-b bg-muted px-3 py-1.5">
-                  <Label className="text-xs font-bold uppercase tracking-wide text-foreground">Chat</Label>
-                </div>
-                <div className="flex flex-1 flex-col p-2 min-h-0">
-                  <div className="flex-1 overflow-auto space-y-2 rounded border bg-muted/30 p-2 text-sm">
-                    {chatMessages.map((m, i) => (
-                      <div
-                        key={i}
-                        className={m.role === "user" ? "text-right" : ""}
-                      >
-                        <span className="font-medium">{m.role === "user" ? "You" : "Assistant"}: </span>
-                        <span className="whitespace-pre-wrap">{m.content}</span>
+            </div>
+            <ul className="flex-1 overflow-auto space-y-2 p-2">
+              {suggestions.length === 0 && !suggestionsLoading && (
+                <li className="text-muted-foreground text-sm">Generate suggestions to see improvements.</li>
+              )}
+              {suggestions.map((s) => {
+                const isActive = activeSuggestionId === s.id
+                return (
+                  <li
+                    key={s.id}
+                    className={`group cursor-pointer rounded border p-2 text-sm transition-colors ${
+                      isActive
+                        ? "border-primary bg-primary/5 ring-1 ring-primary/30"
+                        : "bg-muted/30 hover:bg-muted/50"
+                    }`}
+                    onClick={() => {
+                      setActiveSuggestionId(isActive ? null : s.id)
+                    }}
+                  >
+                    <div className="flex items-start gap-2">
+                      <SuggestionBadge type={s.type} />
+                      <span className="flex-1">{s.text}</span>
+                      <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-blue-600 hover:bg-blue-500/20"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleAskAboutSuggestion(s)
+                          }}
+                          title="Ask about this in chat"
+                        >
+                          <MessageCircleQuestion className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-green-600 hover:bg-green-500/20"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleAcceptSuggestion(s)
+                          }}
+                          title="Accept"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-red-600 hover:bg-red-500/20"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDismissSuggestion(s)
+                          }}
+                          title="Dismiss"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
-                    ))}
-                  </div>
-                  <div className="mt-2 flex gap-2">
-                    <Input
-                      placeholder="Ask about your resume..."
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSendChat()}
-                    />
-                    <Button
-                      size="icon"
-                      onClick={handleSendChat}
-                      disabled={chatLoading || !chatInput.trim()}
-                    >
-                      {chatLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </Panel>
-          </Group>
+                    </div>
+                    {isActive && s.originalText && (
+                      <div className="mt-2 space-y-1 text-xs">
+                        <div className="rounded bg-red-500/10 px-2 py-1 line-through decoration-red-400">
+                          {s.originalText}
+                        </div>
+                        <div className="rounded bg-green-500/10 px-2 py-1">
+                          {s.suggestedText}
+                        </div>
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
         </Panel>
       </Group>
+
+      {chatOpen && (
+        <div className="fixed right-6 bottom-6 z-50 flex h-[420px] w-[400px] flex-col rounded-lg border border-blue-400 bg-blue-200 shadow-2xl dark:border-blue-600 dark:bg-blue-900">
+          <div className="flex items-center justify-between border-b border-blue-400 bg-blue-600 px-3 py-2 rounded-t-lg dark:border-blue-500 dark:bg-blue-800">
+            <span className="text-xs font-bold uppercase tracking-wide text-white">Chat</span>
+            <button
+              onClick={() => { setChatOpen(false); setChatSuggestionCtx(null) }}
+              className="rounded p-0.5 text-white hover:bg-blue-500"
+              aria-label="Close chat"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div ref={chatScrollRef} className="flex-1 overflow-auto space-y-2 p-3 text-sm">
+            {chatMessages.map((m, i) => {
+              const change = m.role === "assistant" ? parseChatChange(m.content) : null
+              const displayText = m.role === "assistant" ? stripSuggestionBlock(m.content) : m.content
+              return (
+                <div key={i} className={m.role === "user" ? "text-right" : ""}>
+                  <span className="font-medium">{m.role === "user" ? "You" : "Assistant"}: </span>
+                  <span className="whitespace-pre-wrap">{displayText}</span>
+                  {change && (
+                    <div className="mt-2 rounded border border-green-400 bg-green-500/5 p-2 text-left text-xs">
+                      <div className="mb-1 font-semibold text-green-700 dark:text-green-400">Proposed change:</div>
+                      <div className="rounded bg-red-500/10 px-2 py-1 line-through decoration-red-400">{change.originalText}</div>
+                      <div className="mt-1 rounded bg-green-500/10 px-2 py-1">{change.suggestedText}</div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-2"
+                        onClick={() => handleApplyChatChange(change)}
+                      >
+                        <Check className="mr-1 h-3 w-3" />
+                        Apply this change
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          {chatSuggestionCtx && (
+            <div className="mx-3 flex items-center gap-1 rounded bg-blue-500/10 px-2 py-1 text-xs text-blue-700 dark:text-blue-400">
+              <MessageCircleQuestion className="h-3 w-3 shrink-0" />
+              <span className="truncate">Asking about: {chatSuggestionCtx.text}</span>
+              <button onClick={() => setChatSuggestionCtx(null)} className="ml-auto shrink-0 hover:text-foreground">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+          <div className="flex gap-2 border-t border-blue-300 p-3 dark:border-blue-700">
+            <Input
+              ref={chatInputRef}
+              placeholder="Ask about your resume..."
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSendChat()}
+            />
+            <Button
+              size="icon"
+              onClick={handleSendChat}
+              disabled={chatLoading || !chatInput.trim()}
+            >
+              {chatLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

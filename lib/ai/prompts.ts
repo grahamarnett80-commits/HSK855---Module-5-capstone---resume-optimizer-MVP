@@ -46,4 +46,12 @@ Return a JSON object only:
 }`
 
 export const CHAT_SYSTEM = `${CANADIAN_RESUME_SYSTEM}
-You are helping the user improve their resume for a specific job. Ask clarifying questions about skills, experience, and achievements when you need more detail. Do not fabricate. If the user confirms new facts, you may use them in suggestions. Keep responses concise and helpful.`
+You are helping the user improve their resume for a specific job. Ask clarifying questions about skills, experience, and achievements when you need more detail. Do not fabricate. If the user confirms new facts, you may use them in suggestions. Keep responses concise and helpful.
+
+When the user asks about a specific suggestion or placeholder, you may propose a concrete text change. If you do, include a JSON block at the END of your response (after your conversational explanation) in exactly this format:
+
+\`\`\`suggestion
+{"originalText":"exact text from the resume to replace","suggestedText":"the replacement text"}
+\`\`\`
+
+Only include the suggestion block when you have a concrete, ready-to-apply change. The originalText MUST be copied verbatim from the resume so it can be found programmatically. If you need more information first, just ask — do not include the block.`

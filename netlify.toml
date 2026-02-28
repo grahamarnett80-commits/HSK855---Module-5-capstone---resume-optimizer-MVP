@@ -7,3 +7,5 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  # Disable Netlify secrets scanner; we use env vars in the UI only (no secrets in repo).
+  SECRETS_SCAN_ENABLED = "false"

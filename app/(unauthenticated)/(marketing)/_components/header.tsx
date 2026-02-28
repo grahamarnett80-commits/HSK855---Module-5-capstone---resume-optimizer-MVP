@@ -72,7 +72,9 @@ export function Header({ userMembership }: HeaderProps) {
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               aria-label="Toggle theme"
             >
-              {theme === "dark" ? (
+              {!mounted ? (
+                <Moon className="h-5 w-5" />
+              ) : theme === "dark" ? (
                 <Sun className="h-5 w-5" />
               ) : (
                 <Moon className="h-5 w-5" />
@@ -147,12 +149,14 @@ export function Header({ userMembership }: HeaderProps) {
                       setMobileMenuOpen(false)
                     }}
                   >
-                    {theme === "dark" ? (
+                    {!mounted ? (
+                      <Moon className="mr-2 h-4 w-4" />
+                    ) : theme === "dark" ? (
                       <Sun className="mr-2 h-4 w-4" />
                     ) : (
                       <Moon className="mr-2 h-4 w-4" />
                     )}
-                    {theme === "dark" ? "Light Mode" : "Dark Mode"}
+                    {!mounted ? "Dark Mode" : theme === "dark" ? "Light Mode" : "Dark Mode"}
                   </Button>
                   <SignedOut>
                     <Button variant="outline" className="w-full" asChild>

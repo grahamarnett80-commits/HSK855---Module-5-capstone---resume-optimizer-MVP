@@ -16,8 +16,13 @@ import { getSuggestionsForVersion, generateSuggestionsForVersion, type Suggestio
 import { sendChatMessage, type SuggestionContext } from "@/actions/chat"
 import { createNewVersionFromContent } from "@/actions/resume-save-version"
 import { getVersionsByProjectId } from "@/actions/resume-versions"
-import { Loader2, Send, Upload, Sparkles, Save, Check, X, CheckCheck, Undo2, MessageCircleQuestion } from "lucide-react"
-import { hasBracketPlaceholders } from "./highlighted-resume"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from "@/components/ui/dropdown-menu"
+import { Loader2, Send, Upload, Sparkles, Save, Check, X, CheckCheck, Undo2, MessageCircleQuestion, Download, FileText } from "lucide-react"
 import { HighlightedJobPosting } from "./highlighted-job-posting"
 
 type Version = {
@@ -81,13 +86,22 @@ export function WorkspaceView({
     [activeSuggestion]
   )
 
+  const dedupeById = useCallback(<T extends { id: string }>(items: T[]): T[] => {
+    const seen = new Set<string>()
+    return items.filter((item) => {
+      if (seen.has(item.id)) return false
+      seen.add(item.id)
+      return true
+    })
+  }, [])
+
   const loadSuggestions = useCallback(async () => {
     if (!selectedVersionId) return
     const res = await getSuggestionsForVersion(selectedVersionId)
     if (res.success && res.suggestions) {
-      setSuggestions(res.suggestions)
+      setSuggestions(dedupeById(res.suggestions))
     }
-  }, [selectedVersionId])
+  }, [selectedVersionId, dedupeById])
 
   useEffect(() => {
     if (selectedVersionId) loadSuggestions()
@@ -99,6 +113,23 @@ export function WorkspaceView({
       setUndoStack([])
     }
   }, [currentVersion])
+
+  const resumeTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const latestResumeContentRef = useRef(resumeContent)
+  latestResumeContentRef.current = resumeContent
+
+  useEffect(() => {
+    if (!activeSuggestion?.originalText || !resumeContent.includes(activeSuggestion.originalText)) return
+    const el = resumeTextareaRef.current
+    if (!el) return
+    const start = resumeContent.indexOf(activeSuggestion.originalText)
+    const end = start + activeSuggestion.originalText.length
+    el.focus()
+    el.setSelectionRange(start, end)
+    const lineHeight = parseInt(getComputedStyle(el).lineHeight, 10) || 20
+    const linesBefore = (resumeContent.slice(0, start).match(/\n/g) ?? []).length
+    el.scrollTop = Math.max(0, linesBefore * lineHeight - el.clientHeight / 3)
+  }, [activeSuggestion?.id, activeSuggestion?.originalText, resumeContent])
 
   function handleAcceptSuggestion(s: SuggestionItem) {
     if (s.originalText && s.suggestedText && resumeContent.includes(s.originalText)) {
@@ -161,7 +192,9 @@ export function WorkspaceView({
       if (prev.length === 0) return prev
       const last = prev[prev.length - 1]
       setResumeContent(last.contentBefore)
-      setSuggestions((s) => [...s, last.suggestion])
+      setSuggestions((s) =>
+        s.some((x) => x.id === last.suggestion.id) ? s : [...s, last.suggestion]
+      )
       toast.info("Change reversed.")
       return prev.slice(0, -1)
     })
@@ -174,7 +207,13 @@ export function WorkspaceView({
       const earliest = toUndo[0]
       if (earliest) {
         setResumeContent(earliest.contentBefore)
-        setSuggestions((s) => [...s, ...toUndo.map((u) => u.suggestion)])
+        setSuggestions((s) => {
+          const existingIds = new Set(s.map((x) => x.id))
+          const toAdd = dedupeById(
+            toUndo.map((u) => u.suggestion).filter((sug) => !existingIds.has(sug.id))
+          )
+          return toAdd.length === 0 ? s : [...s, ...toAdd]
+        })
         toast.info(`Reversed ${toUndo.length} change${toUndo.length !== 1 ? "s" : ""}.`)
       }
       return prev.slice(0, -count)
@@ -237,7 +276,7 @@ export function WorkspaceView({
     const res = await generateSuggestionsForVersion(selectedVersionId)
     setSuggestionsLoading(false)
     if (res.success && res.suggestions) {
-      setSuggestions(res.suggestions)
+      setSuggestions(dedupeById(res.suggestions))
     } else {
       toast.error(res.error)
     }
@@ -246,26 +285,31 @@ export function WorkspaceView({
   const [pendingSave, setPendingSave] = useState(false)
 
   async function handleSaveNewVersion(bypassBracketCheck = false) {
-    if (!resumeContent.trim()) {
+    // Use textarea DOM value if available; otherwise use ref that's updated every render (avoids stale state)
+    const contentToSave =
+      (typeof resumeTextareaRef.current?.value === "string"
+        ? resumeTextareaRef.current.value
+        : null) ?? latestResumeContentRef.current ?? resumeContent
+
+    if (!contentToSave.trim()) {
       toast.error("Resume content is empty.")
       return
     }
-    if (!bypassBracketCheck && hasBracketPlaceholders(resumeContent)) {
-      setPendingSave(true)
-      const bracketMatches = resumeContent.match(/\[[^\]]{2,}\]/g) ?? []
-      toast.warning(`You have ${bracketMatches.length} unresolved placeholder${bracketMatches.length !== 1 ? "s" : ""} in your resume.`, {
-        description: "Placeholders like [Your achievement here] should be filled in before saving.",
-        action: {
-          label: "Save anyway",
-          onClick: () => handleSaveNewVersion(true)
-        },
-        duration: 10000
-      })
-      setPendingSave(false)
+    // Check both state and live content so we never miss placeholders like [X]
+    const textToCheck = contentToSave
+    const bracketRe = /\[[^\]]*\]/g
+    const hasPlaceholders = bracketRe.test(textToCheck)
+    if (!bypassBracketCheck && hasPlaceholders) {
+      const bracketMatches = textToCheck.match(/\[[^\]]*\]/g) ?? []
+      const proceed = window.confirm(
+        `You have ${bracketMatches.length} unresolved placeholder${bracketMatches.length !== 1 ? "s" : ""} in your resume (e.g. [X] or [Your text here]).\n\nDo you want to save anyway?`
+      )
+      if (!proceed) return
+      await handleSaveNewVersion(true)
       return
     }
     setSaving(true)
-    const res = await createNewVersionFromContent(project.id, resumeContent)
+    const res = await createNewVersionFromContent(project.id, contentToSave)
     setSaving(false)
     if (res.success && res.versionId) {
       const raw = await getVersionsByProjectId(project.id)
@@ -296,6 +340,93 @@ export function WorkspaceView({
       }
     } else {
       toast.error(res.error)
+    }
+  }
+
+  function getCurrentResumeContent(): string {
+    return (
+      (typeof resumeTextareaRef.current?.value === "string"
+        ? resumeTextareaRef.current.value
+        : null) ?? latestResumeContentRef.current ?? resumeContent
+    )
+  }
+
+  function downloadBlob(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  /** Returns content to use for download, or null if empty or user cancelled the placeholder warning. */
+  function getContentForDownload(): string | null {
+    const content = getCurrentResumeContent()
+    if (!content.trim()) {
+      toast.error("Resume content is empty.")
+      return null
+    }
+    const bracketMatches = content.match(/\[[^\]]*\]/g) ?? []
+    if (bracketMatches.length > 0) {
+      const proceed = window.confirm(
+        `You have ${bracketMatches.length} unresolved placeholder${bracketMatches.length !== 1 ? "s" : ""} in your resume (e.g. [X] or [Your text here]).\n\nDo you want to download anyway?`
+      )
+      if (!proceed) return null
+    }
+    return content
+  }
+
+  function handleDownloadTxt() {
+    const content = getContentForDownload()
+    if (content === null) return
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" })
+    downloadBlob(blob, "resume.txt")
+    toast.success("Downloaded resume.txt")
+  }
+
+  async function handleDownloadDocx() {
+    const content = getContentForDownload()
+    if (content === null) return
+    try {
+      const { Document, Packer, Paragraph, TextRun } = await import("docx")
+      const paragraphs = content
+        .split(/\r?\n/)
+        .map((line) => new Paragraph({ children: [new TextRun(line)] }))
+      const doc = new Document({ sections: [{ children: paragraphs }] })
+      const blob = await Packer.toBlob(doc)
+      downloadBlob(blob, "resume.docx")
+      toast.success("Downloaded resume.docx")
+    } catch (e) {
+      toast.error("Could not create Word document.")
+      console.error(e)
+    }
+  }
+
+  async function handleDownloadPdf() {
+    const content = getContentForDownload()
+    if (content === null) return
+    try {
+      const { jsPDF } = await import("jspdf")
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
+      const margin = 20
+      const lineHeight = 7
+      const pageHeight = doc.internal.pageSize.getHeight()
+      let y = margin
+      const lines = content.split(/\r?\n/)
+      for (const line of lines) {
+        if (y > pageHeight - margin) {
+          doc.addPage()
+          y = margin
+        }
+        doc.text(line, margin, y)
+        y += lineHeight
+      }
+      doc.save("resume.pdf")
+      toast.success("Downloaded resume.pdf")
+    } catch (e) {
+      toast.error("Could not create PDF.")
+      console.error(e)
     }
   }
 
@@ -471,12 +602,40 @@ export function WorkspaceView({
             type="button"
             variant="outline"
             size="sm"
-            onClick={handleSaveNewVersion}
+            onClick={(e) => {
+              e.preventDefault()
+              handleSaveNewVersion()
+            }}
             disabled={saving}
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save as new version
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={versions.length === 0}
+              >
+                <Download className="h-4 w-4" />
+                Download
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={handleDownloadTxt}>
+                <FileText className="h-4 w-4" />
+                Plain text (.txt)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleDownloadDocx}>
+                Word (.docx)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleDownloadPdf}>
+                PDF (.pdf)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -497,6 +656,7 @@ export function WorkspaceView({
                   </div>
                 ) : (
                   <Textarea
+                    ref={resumeTextareaRef}
                     className="mt-1 flex-1 min-h-0 resize-none font-mono text-sm"
                     value={resumeContent}
                     onChange={(e) => setResumeContent(e.target.value)}

@@ -53,7 +53,7 @@ function buildSegments(
     }
   }
 
-  const bracketRe = /\[[^\]]{2,}\]/g
+  const bracketRe = /\[[^\]]+\]/g
   let match: RegExpExecArray | null
   while ((match = bracketRe.exec(content)) !== null) {
     regions.push({ start: match.index, end: match.index + match[0].length, kind: "bracket", suggestion: null })
@@ -85,7 +85,7 @@ function buildSegments(
   return segments
 }
 
-export const hasBracketPlaceholders = (text: string) => /\[[^\]]{2,}\]/.test(text)
+export const hasBracketPlaceholders = (text: string) => /\[[^\]]+\]/.test(text)
 
 export function HighlightedResume({
   content,
@@ -116,14 +116,14 @@ export function HighlightedResume({
           return (
             <span
               key={i}
-              className="inline-flex items-center gap-0.5 rounded border border-orange-400 bg-orange-400/20 px-0.5 font-semibold text-orange-700 animate-pulse dark:text-orange-300"
+              className="inline-flex items-center gap-0.5 rounded border border-orange-400 bg-orange-400/20 px-0.5 font-semibold text-orange-700 animate-pulse dark:border-amber-400 dark:bg-amber-500/35 dark:text-amber-200"
               title="Placeholder — update this with your information"
             >
               {seg.text}
               {onAskAboutBracket && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onAskAboutBracket(seg.text) }}
-                  className="ml-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-orange-500/20 text-orange-700 hover:bg-orange-500/40 dark:text-orange-300"
+                  className="ml-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-orange-500/20 text-orange-700 hover:bg-orange-500/40 dark:bg-amber-500/40 dark:text-amber-200 dark:hover:bg-amber-500/60"
                   title="Ask AI for help filling this in"
                 >
                   <MessageCircleQuestion className="h-2.5 w-2.5" />

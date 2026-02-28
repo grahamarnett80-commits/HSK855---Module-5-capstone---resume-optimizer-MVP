@@ -5,7 +5,7 @@ import { packPurchases } from "@/db/schema/pack-purchases"
 import { projectCreditBalance } from "@/db/schema/project-credits"
 import { projects } from "@/db/schema/projects"
 import { resumeVersions } from "@/db/schema/resume-versions"
-import { eq, sql } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 
 const SCORE_COOLDOWN_MS = 2 * 60 * 1000 // 2 minutes
 const MIN_EDIT_DELTA_CHARS = 50
@@ -35,8 +35,12 @@ export async function consumeCredit(userId: string): Promise<boolean> {
       balance: sql`${projectCreditBalance.balance} - 1`,
       updatedAt: new Date()
     })
-    .where(eq(projectCreditBalance.userId, userId))
-    .where(sql`${projectCreditBalance.balance} >= 1`)
+    .where(
+      and(
+        eq(projectCreditBalance.userId, userId),
+        sql`${projectCreditBalance.balance} >= 1`
+      )
+    )
     .returning({ userId: projectCreditBalance.userId })
   return result.length > 0
 }

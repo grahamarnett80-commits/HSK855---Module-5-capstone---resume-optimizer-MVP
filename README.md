@@ -63,4 +63,10 @@ NEXT_PUBLIC_STRIPE_PAYMENT_LINK_MONTHLY=
 
 ## Deploy (Netlify)
 
-Connect the repo in Netlify, set the framework to Next.js, and add the same environment variables in Site settings > Environment variables. See `netlify.toml` for build config.
+1. **Connect the repo** in Netlify and set the framework to **Next.js** (auto-detected). See `netlify.toml` for build config.
+2. **Environment variables:** In Netlify go to **Site settings → Environment variables** and add the same variables as in `.env.example`. Required for production:
+   - `NEXT_PUBLIC_APP_URL` — set to your Netlify site URL (e.g. `https://your-site.netlify.app`) for SEO, sitemap, and Stripe redirects.
+   - `DATABASE_URL`, Clerk keys, `GEMINI_API_KEY`, Supabase keys, and Stripe keys (including `STRIPE_PRICE_ID_3_PACK`, `STRIPE_PRICE_ID_10_PACK`, `STRIPE_PRICE_ID_25_PACK`).
+3. **Database:** Run migrations against your production DB (e.g. Supabase cloud) before or right after first deploy: `npm run db:migrate` with `DATABASE_URL` pointing at production.
+4. **Stripe webhook:** In Stripe Dashboard add an endpoint for your production URL: `https://your-site.netlify.app/api/stripe/webhooks`. Set `STRIPE_WEBHOOK_SECRET` in Netlify to the signing secret Stripe gives you.
+5. **Clerk:** In Clerk Dashboard set the production domain for your Netlify site so sign-in/sign-up redirects work.

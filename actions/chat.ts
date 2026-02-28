@@ -36,11 +36,20 @@ export async function sendChatMessage(
   projectId: string,
   content: string,
   suggestionContext?: SuggestionContext
-): Promise<{ success: boolean; reply?: string; error?: string }> {
+): Promise<{ success: boolean; reply?: string; error?: string; code?: string }> {
   const user = await currentUser()
   if (!user) return { success: false, error: "Not authenticated" }
   const project = await getProjectById(projectId)
   if (!project) return { success: false, error: "Project not found" }
+
+  const cap = await checkInteractionCap(projectId)
+  if (!cap.allowed) {
+    return {
+      success: false,
+      error: "You've used all AI uses for this project.",
+      code: "interaction_cap"
+    }
+  }
 
   await db.insert(chatMessages).values({ projectId, role: "user", content })
 

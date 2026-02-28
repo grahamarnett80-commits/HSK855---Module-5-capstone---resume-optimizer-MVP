@@ -103,7 +103,7 @@ export async function canRefreshScore(
   projectId: string,
   versionId: string,
   currentResumeContent: string
-): Promise<{ allowed: boolean; reason?: string }> {
+): Promise<{ allowed: boolean; reason?: string; cooldownSeconds?: number; message?: string }> {
   const capCheck = await checkInteractionCap(projectId)
   if (!capCheck.allowed) {
     return { allowed: false, reason: "interaction_cap" }

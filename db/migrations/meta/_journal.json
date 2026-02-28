@@ -15,6 +15,13 @@
       "when": 1772239865468,
       "tag": "0001_slimy_the_renegades",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1772262729026,
+      "tag": "0002_material_bulldozer",
+      "breakpoints": true
     }
   ]
 }

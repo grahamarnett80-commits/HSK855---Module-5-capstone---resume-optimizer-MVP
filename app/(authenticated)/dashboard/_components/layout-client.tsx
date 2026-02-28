@@ -12,11 +12,32 @@ import { Separator } from "@/components/ui/separator"
 import {
   SidebarInset,
   SidebarProvider,
-  SidebarTrigger
+  SidebarTrigger,
+  useSidebar
 } from "@/components/ui/sidebar"
 import { UserButton } from "@clerk/nextjs"
 import { usePathname } from "next/navigation"
+import { useEffect, useRef } from "react"
 import { AppSidebar } from "./app-sidebar"
+
+function AutoCollapseSidebar() {
+  const pathname = usePathname()
+  const { setOpen } = useSidebar()
+  const prevPathname = useRef(pathname)
+
+  useEffect(() => {
+    if (pathname !== prevPathname.current) {
+      if (pathname.includes("/workspace/")) {
+        setOpen(false)
+      } else if (prevPathname.current.includes("/workspace/")) {
+        setOpen(true)
+      }
+      prevPathname.current = pathname
+    }
+  }, [pathname, setOpen])
+
+  return null
+}
 
 export default function DashboardClientLayout({
   children,
@@ -41,8 +62,9 @@ export default function DashboardClientLayout({
     return null
   }
 
+  const isWorkspace = pathname.includes("/workspace/")
   const savedState = getCookieValue("sidebar_state")
-  const defaultOpen = savedState === null ? true : savedState === "true"
+  const defaultOpen = isWorkspace ? false : savedState === null ? true : savedState === "true"
 
   const getBreadcrumbs = () => {
     const paths = pathname.split("/").filter(Boolean)
@@ -139,6 +161,7 @@ export default function DashboardClientLayout({
 
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
+      <AutoCollapseSidebar />
       <AppSidebar userData={userData} />
       <SidebarInset>
         <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">

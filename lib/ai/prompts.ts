@@ -24,10 +24,24 @@ You assess how well a resume matches a job posting. Return a JSON object only, n
 }`
 
 export const SUGGESTIONS_SYSTEM = `${CANADIAN_RESUME_SYSTEM}
-Suggest concrete improvements to the resume for this job. Only suggest changes that do not require inventing facts. If something is unclear, suggest the user add the information or ask in chat. Return a JSON object only:
+Suggest concrete improvements to the resume for this job. Only suggest changes that do not require inventing facts. If something is unclear, suggest the user add the information or ask in chat.
+
+IMPORTANT: For every suggestion, you MUST include:
+- "originalText": the EXACT text snippet copied verbatim from the resume that you want to change (must match character-for-character so it can be found programmatically). Keep it short — ideally one bullet point, sentence, or heading — not entire sections.
+- "suggestedText": the replacement text that should replace originalText.
+- "jobPostingKeywords": an array of 1-5 short keywords or phrases from the job posting that this suggestion addresses.
+
+Return a JSON object only:
 {
   "suggestions": [
-    { "type": "section_rewrite" | "keyword_add" | "quantify" | "clarify" | "other", "section": string (e.g. "Experience"), "text": string (the suggestion text) }
+    {
+      "type": "section_rewrite" | "keyword_add" | "quantify" | "clarify" | "other",
+      "section": string (e.g. "Experience"),
+      "text": string (a short human-readable explanation of the change),
+      "originalText": string (exact snippet from resume),
+      "suggestedText": string (proposed replacement),
+      "jobPostingKeywords": string[] (related keywords from the job posting)
+    }
   ]
 }`
 

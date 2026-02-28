@@ -6,7 +6,7 @@ function getClient(): GoogleGenerativeAI {
   return new GoogleGenerativeAI(key)
 }
 
-const MODEL = "gemini-2.0-flash"
+const MODEL = "gemini-2.5-flash-lite"
 
 export async function runScoring(
   jobPostingText: string,
@@ -36,10 +36,19 @@ export async function runScoring(
   }
 }
 
+export type AISuggestion = {
+  type: string
+  section: string
+  text: string
+  originalText: string
+  suggestedText: string
+  jobPostingKeywords: string[]
+}
+
 export async function runSuggestions(
   jobPostingText: string,
   resumeContent: string
-): Promise<{ type: string; section: string; text: string }[]> {
+): Promise<AISuggestion[]> {
   const genAI = getClient()
   const { SUGGESTIONS_SYSTEM } = await import("./prompts")
   const model = genAI.getGenerativeModel({
@@ -52,8 +61,16 @@ export async function runSuggestions(
   )
   const raw = res.response.text()
   if (!raw) return []
-  const parsed = JSON.parse(raw) as { suggestions?: { type: string; section: string; text: string }[] }
-  return Array.isArray(parsed.suggestions) ? parsed.suggestions : []
+  const parsed = JSON.parse(raw) as { suggestions?: AISuggestion[] }
+  if (!Array.isArray(parsed.suggestions)) return []
+  return parsed.suggestions.map((s) => ({
+    type: s.type ?? "other",
+    section: s.section ?? "",
+    text: s.text ?? "",
+    originalText: s.originalText ?? "",
+    suggestedText: s.suggestedText ?? "",
+    jobPostingKeywords: Array.isArray(s.jobPostingKeywords) ? s.jobPostingKeywords : []
+  }))
 }
 
 export async function runChat(

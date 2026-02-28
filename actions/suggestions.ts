@@ -8,7 +8,38 @@ import { runSuggestions } from "@/lib/ai/client"
 import { currentUser } from "@clerk/nextjs/server"
 import { eq } from "drizzle-orm"
 
-export type SuggestionItem = { id: string; type: string | null; section: string; text: string }
+export type SuggestionItem = {
+  id: string
+  type: string | null
+  section: string
+  text: string
+  originalText: string
+  suggestedText: string
+  jobPostingKeywords: string[]
+}
+
+function rowToItem(r: {
+  id: string
+  type: string | null
+  content: string
+  originalText: string | null
+  suggestedText: string | null
+  jobPostingKeywords: string | null
+}): SuggestionItem {
+  let keywords: string[] = []
+  if (r.jobPostingKeywords) {
+    try { keywords = JSON.parse(r.jobPostingKeywords) } catch { /* ignore */ }
+  }
+  return {
+    id: r.id,
+    type: r.type,
+    section: "",
+    text: r.content,
+    originalText: r.originalText ?? "",
+    suggestedText: r.suggestedText ?? "",
+    jobPostingKeywords: keywords
+  }
+}
 
 export async function getSuggestionsForVersion(
   versionId: string
@@ -19,13 +50,7 @@ export async function getSuggestionsForVersion(
   const rows = await db.query.suggestions.findMany({
     where: eq(suggestionsTable.resumeVersionId, versionId)
   })
-  const suggestions: SuggestionItem[] = rows.map((r) => ({
-    id: r.id,
-    type: r.type,
-    section: "",
-    text: r.content
-  }))
-  return { success: true, suggestions }
+  return { success: true, suggestions: rows.map(rowToItem) }
 }
 
 export async function generateSuggestionsForVersion(
@@ -48,7 +73,6 @@ export async function generateSuggestionsForVersion(
 
   try {
     const items = await runSuggestions(jobText, version.content)
-    // Clear old suggestions for this version and insert new
     await db.delete(suggestionsTable).where(eq(suggestionsTable.resumeVersionId, versionId))
     if (items.length > 0) {
       const inserted = await db
@@ -57,14 +81,14 @@ export async function generateSuggestionsForVersion(
           items.map((i) => ({
             resumeVersionId: versionId,
             content: `${i.section ? `[${i.section}] ` : ""}${i.text}`,
-            type: i.type
+            type: i.type,
+            originalText: i.originalText,
+            suggestedText: i.suggestedText,
+            jobPostingKeywords: JSON.stringify(i.jobPostingKeywords)
           }))
         )
         .returning()
-      return {
-        success: true,
-        suggestions: inserted.map((r) => ({ id: r.id, type: r.type, section: "", text: r.content }))
-      }
+      return { success: true, suggestions: inserted.map(rowToItem) }
     }
     return { success: true, suggestions: [] }
   } catch (e) {

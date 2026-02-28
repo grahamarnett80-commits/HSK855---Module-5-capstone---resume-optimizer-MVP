@@ -7,7 +7,10 @@ export const suggestions = pgTable("suggestions", {
     onDelete: "cascade"
   }),
   content: text("content").notNull(),
-  type: text("type"), // section_rewrite, keyword_add, etc.
+  type: text("type"),
+  originalText: text("original_text"),
+  suggestedText: text("suggested_text"),
+  jobPostingKeywords: text("job_posting_keywords"),
   createdAt: timestamp("created_at").defaultNow().notNull()
 })
 

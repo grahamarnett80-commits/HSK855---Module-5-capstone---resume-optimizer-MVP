@@ -4,6 +4,7 @@ import { db } from "@/db"
 import { chatMessages } from "@/db/schema/chat-messages"
 import { getProjectById } from "@/actions/projects"
 import { resumeVersions } from "@/db/schema/resume-versions"
+import { checkInteractionCap, recordInteraction } from "@/lib/entitlements"
 import { runChat } from "@/lib/ai/client"
 import { currentUser } from "@clerk/nextjs/server"
 import { asc, desc, eq } from "drizzle-orm"
@@ -63,6 +64,7 @@ export async function sendChatMessage(
   }
 
   const reply = await runChat(jobText, resumeContent + contextPrefix, messages)
+  await recordInteraction(projectId, "chat")
   await db.insert(chatMessages).values({ projectId, role: "assistant", content: reply })
 
   return { success: true, reply }

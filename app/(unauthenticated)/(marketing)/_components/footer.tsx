@@ -26,11 +26,10 @@ export function Footer() {
         <div className="xl:grid xl:grid-cols-3 xl:gap-8">
           <div className="space-y-8">
             <Link href="/" className="text-xl font-bold">
-              Resume Optimizer
+              OnTarget Resume Studio
             </Link>
             <p className="text-muted-foreground text-sm leading-6">
-              AI-powered resume optimization for Canadian job seekers.
-              Get matched, get suggestions, get hired.
+              Hit the role. Every time.
             </p>
           </div>
           <div className="mt-16 grid grid-cols-3 gap-8 xl:col-span-2 xl:mt-0">
@@ -89,7 +88,7 @@ export function Footer() {
         </div>
         <div className="border-border mt-16 border-t pt-8 sm:mt-20 lg:mt-24">
           <p className="text-muted-foreground text-xs leading-5">
-            &copy; {new Date().getFullYear()} Resume Optimizer. All rights
+            &copy; {new Date().getFullYear()} OnTarget Resume Studio. All rights
             reserved.
           </p>
         </div>

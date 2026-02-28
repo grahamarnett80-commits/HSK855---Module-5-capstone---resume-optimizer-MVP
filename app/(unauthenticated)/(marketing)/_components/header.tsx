@@ -1,5 +1,6 @@
 "use client"
 
+import { BullseyeLogo } from "@/components/bullseye-logo"
 import { Button } from "@/components/ui/button"
 import { SelectCustomer } from "@/db/schema/customers"
 import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs"
@@ -36,8 +37,9 @@ export function Header({ userMembership }: HeaderProps) {
           aria-label="Global"
         >
           <div className="flex lg:flex-1">
-            <Link href="/" className="-m-1.5 p-1.5">
-              <span className="text-xl font-bold">Resume Optimizer</span>
+            <Link href="/" className="-m-1.5 flex items-center gap-2 p-1.5">
+              <BullseyeLogo size={28} className="size-7 text-foreground" />
+              <span className="text-xl font-bold">OnTarget Resume Studio</span>
             </Link>
           </div>
           <div className="flex lg:hidden">
@@ -112,10 +114,11 @@ export function Header({ userMembership }: HeaderProps) {
             <div className="flex items-center justify-between">
               <Link
                 href="/"
-                className="-m-1.5 p-1.5"
+                className="-m-1.5 flex items-center gap-2 p-1.5"
                 onClick={() => setMobileMenuOpen(false)}
               >
-                <span className="text-xl font-bold">Resume Optimizer</span>
+                <BullseyeLogo size={28} className="size-7 text-foreground" />
+                <span className="text-xl font-bold">OnTarget Resume Studio</span>
               </Link>
               <button
                 type="button"

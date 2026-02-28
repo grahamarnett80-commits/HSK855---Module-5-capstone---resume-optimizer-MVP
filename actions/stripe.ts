@@ -1,5 +1,7 @@
 "use server"
 
+import { config } from "dotenv"
+import path from "path"
 import {
   createCustomer,
   getCustomerByUserId,
@@ -10,6 +12,9 @@ import { SelectCustomer } from "@/db/schema/customers"
 import { stripe } from "@/lib/stripe"
 import { auth } from "@clerk/nextjs/server"
 import Stripe from "stripe"
+
+// Load .env.local from project root so pack price IDs are available (Next/Turbopack may not expose them to server actions).
+config({ path: path.resolve(process.cwd(), ".env.local") })
 
 type MembershipStatus = SelectCustomer["membership"]
 
@@ -161,6 +166,50 @@ export const createCheckoutUrl = async (
       url: null,
       error:
         error instanceof Error ? error.message : "Failed to create checkout URL"
+    }
+  }
+}
+
+function getPackPriceId(packSize: 3 | 10 | 25): string {
+  const raw =
+    packSize === 3
+      ? process.env.STRIPE_PRICE_ID_3_PACK
+      : packSize === 10
+        ? process.env.STRIPE_PRICE_ID_10_PACK
+        : process.env.STRIPE_PRICE_ID_25_PACK
+  return (raw ?? "").trim()
+}
+
+export async function createPackCheckoutUrl(
+  packSize: 3 | 10 | 25
+): Promise<{ url: string | null; error: string | null }> {
+  try {
+    const { userId } = await auth()
+    if (!userId) return { url: null, error: "Not authenticated" }
+
+    const priceId = getPackPriceId(packSize)
+    if (!priceId)
+      return {
+        url: null,
+        error: `Pack not configured. Add STRIPE_PRICE_ID_${packSize}_PACK to .env.local with a one-time Price ID from the Stripe Dashboard (Products → your pack → Price).`
+      }
+
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      client_reference_id: userId,
+      metadata: { pack_size: String(packSize) },
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: `${baseUrl}/dashboard?pack=success`,
+      cancel_url: `${baseUrl}/dashboard#pricing`
+    })
+
+    return { url: session.url, error: null }
+  } catch (error) {
+    console.error("createPackCheckoutUrl:", error)
+    return {
+      url: null,
+      error: error instanceof Error ? error.message : "Failed to start checkout"
     }
   }
 }

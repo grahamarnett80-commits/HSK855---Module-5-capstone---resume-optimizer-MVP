@@ -17,7 +17,9 @@ export default async function WorkspacePage({
       project={{
         id: project.id,
         name: project.name,
-        jobPostingText: project.jobPostingText ?? ""
+        jobPostingText: project.jobPostingText ?? "",
+        interactionCount: project.interactionCount ?? 0,
+        interactionCap: project.interactionCap ?? 25
       }}
       versions={versions.map((v) => ({
         id: v.id,

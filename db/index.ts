@@ -3,6 +3,9 @@ import { drizzle as drizzlePostgres } from "drizzle-orm/postgres-js"
 import postgres from "postgres"
 import { chatMessages } from "./schema/chat-messages"
 import { customers } from "./schema/customers"
+import { interactionEvents } from "./schema/interaction-events"
+import { packPurchases } from "./schema/pack-purchases"
+import { projectCreditBalance } from "./schema/project-credits"
 import { projects } from "./schema/projects"
 import { resumeVersions } from "./schema/resume-versions"
 import { suggestions } from "./schema/suggestions"
@@ -14,7 +17,10 @@ const dbSchema = {
   projects,
   resumeVersions,
   suggestions,
-  chatMessages
+  chatMessages,
+  packPurchases,
+  projectCreditBalance,
+  interactionEvents
 }
 
 function initializeDb(url: string) {

@@ -1,3 +1,4 @@
+import { SEOJsonLd } from "@/components/seo-json-ld"
 import { CompaniesSection } from "./_components/sections/companies-section"
 import { CTASection } from "./_components/sections/cta-section"
 import { FAQSection } from "./_components/sections/faq-section"
@@ -8,6 +9,7 @@ import { PricingSection } from "./_components/sections/pricing-section"
 export default function MarketingPage() {
   return (
     <main className="min-h-screen">
+      <SEOJsonLd />
       <HeroSection />
       <CompaniesSection />
       <FeaturesSection />

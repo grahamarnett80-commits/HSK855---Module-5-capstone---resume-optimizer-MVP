@@ -1,6 +1,6 @@
 "use client"
 
-import { FileText } from "lucide-react"
+import { BullseyeLogo } from "@/components/bullseye-logo"
 import Link from "next/link"
 import {
   SidebarMenu,
@@ -15,11 +15,11 @@ export function TeamSwitcher() {
         <SidebarMenuButton size="lg" asChild>
           <Link href="/dashboard">
             <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
-              <FileText className="size-4" />
+              <BullseyeLogo size={20} />
             </div>
             <div className="grid flex-1 text-left text-sm leading-tight">
-              <span className="truncate font-medium">Resume Optimizer</span>
-              <span className="truncate text-xs">AI-powered</span>
+              <span className="truncate font-medium">OnTarget Resume Studio</span>
+              <span className="truncate text-xs" title="Hit the role. Every time.">Hit the role. Every time.</span>
             </div>
           </Link>
         </SidebarMenuButton>

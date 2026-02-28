@@ -74,7 +74,7 @@ export function FAQSection() {
             viewport={{ once: true }}
             transition={{ duration: 0.5, delay: 0.1 }}
           >
-            Everything you need to know about Resume Optimizer.
+            Everything you need to know about OnTarget Resume Studio.
           </motion.p>
           <dl className="mt-10 space-y-6">
             {faqs.map((faq, index) => (

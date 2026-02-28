@@ -4,6 +4,7 @@ import { db } from "@/db"
 import { suggestions as suggestionsTable } from "@/db/schema/suggestions"
 import { resumeVersions } from "@/db/schema/resume-versions"
 import { getProjectById } from "@/actions/projects"
+import { checkInteractionCap, recordInteraction } from "@/lib/entitlements"
 import { runSuggestions } from "@/lib/ai/client"
 import { currentUser } from "@clerk/nextjs/server"
 import { eq } from "drizzle-orm"
@@ -55,7 +56,12 @@ export async function getSuggestionsForVersion(
 
 export async function generateSuggestionsForVersion(
   versionId: string
-): Promise<{ success: boolean; suggestions?: SuggestionItem[]; error?: string }> {
+): Promise<{
+  success: boolean
+  suggestions?: SuggestionItem[]
+  error?: string
+  code?: "interaction_cap"
+}> {
   const user = await currentUser()
   if (!user) return { success: false, error: "Not authenticated" }
 
@@ -68,11 +74,21 @@ export async function generateSuggestionsForVersion(
   const project = await getProjectById(version.projectId)
   if (!project) return { success: false, error: "Project not found" }
 
+  const capCheck = await checkInteractionCap(project.id)
+  if (!capCheck.allowed) {
+    return {
+      success: false,
+      error: `You've used all ${capCheck.cap} AI uses for this project. Editing stays available; add a project pack for more.`,
+      code: "interaction_cap"
+    }
+  }
+
   const jobText = project.jobPostingText?.trim() ?? ""
   if (!jobText) return { success: false, error: "No job posting to suggest against." }
 
   try {
     const items = await runSuggestions(jobText, version.content)
+    await recordInteraction(project.id, "suggestions")
     await db.delete(suggestionsTable).where(eq(suggestionsTable.resumeVersionId, versionId))
     if (items.length > 0) {
       const inserted = await db

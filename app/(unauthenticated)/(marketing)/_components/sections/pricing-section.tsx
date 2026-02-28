@@ -29,7 +29,7 @@ export function PricingSection() {
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
           >
-            Free during beta
+            Free plan
           </motion.h2>
           <motion.p
             className="text-muted-foreground mt-4 text-lg leading-8"
@@ -38,8 +38,7 @@ export function PricingSection() {
             viewport={{ once: true }}
             transition={{ duration: 0.5, delay: 0.1 }}
           >
-            Get full access to every feature while we&apos;re in beta. No
-            credit card required.
+            Get full access to every feature. No credit card required.
           </motion.p>
         </div>
 
@@ -54,7 +53,7 @@ export function PricingSection() {
             <div className="flex items-center gap-4">
               <Rocket className="text-primary h-8 w-8" />
               <h3 className="text-foreground text-lg leading-8 font-semibold">
-                Beta Access
+                Free
               </h3>
             </div>
 
@@ -68,7 +67,7 @@ export function PricingSection() {
                 $0
               </span>
               <span className="text-muted-foreground text-sm leading-6 font-semibold">
-                /forever during beta
+                forever
               </span>
             </p>
 

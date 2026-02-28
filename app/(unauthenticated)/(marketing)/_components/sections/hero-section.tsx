@@ -19,7 +19,7 @@ export function HeroSection() {
         >
           <span className="ring-border hover:bg-accent hover:text-accent-foreground relative inline-flex items-center rounded-full px-3 py-1 text-xs leading-6 shadow-sm ring-1 transition-colors sm:text-sm">
             <Target className="mr-2 h-4 w-4" />
-            AI-powered resume optimization for Canadian job seekers
+            Hit the role. Every time.
           </span>
         </motion.div>
 
@@ -29,7 +29,7 @@ export function HeroSection() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.1 }}
         >
-          Land your dream job
+          Review, compare, and refine
           <motion.span
             className="from-brand-primary to-brand-secondary block bg-gradient-to-r bg-clip-text pb-2 leading-tight text-transparent"
             animate={{
@@ -44,7 +44,7 @@ export function HeroSection() {
               backgroundSize: "200% 200%"
             }}
           >
-            with the perfect resume
+            Hit the role. Every time.
           </motion.span>
         </motion.h1>
         <motion.p
@@ -53,9 +53,9 @@ export function HeroSection() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.2 }}
         >
-          Upload your resume, paste a job posting, and get an instant match
-          score with AI-powered suggestions to optimize your application.
-          Built for Canadian standards.
+          Review, compare, and refine your resume directly against the job
+          posting—with AI that highlights gaps, suggests fixes, and keeps you in
+          control.
         </motion.p>
         <motion.div
           className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row sm:gap-x-6"
@@ -140,9 +140,9 @@ export function HeroSection() {
           transition={{ duration: 0.6, delay: 0.6 }}
         >
           {[
-            "Canadian resume standards",
-            "AI match scoring",
-            "Truthful & accurate"
+            "Highlights gaps",
+            "Suggests fixes",
+            "You stay in control"
           ].map((text, i) => (
             <motion.div
               key={text}

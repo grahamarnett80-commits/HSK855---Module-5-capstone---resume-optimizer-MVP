@@ -1,13 +1,13 @@
 "use client"
 
-import { createProject } from "@/actions/projects"
+import { createProject, getCreditsForCurrentUser } from "@/actions/projects"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { toast } from "sonner"
 
 export default function NewProjectPage() {
@@ -16,6 +16,11 @@ export default function NewProjectPage() {
   const [jobPostingUrl, setJobPostingUrl] = useState("")
   const [jobPostingText, setJobPostingText] = useState("")
   const [loading, setLoading] = useState(false)
+  const [credits, setCredits] = useState<{ balance: number; freeProjectUsed: boolean } | null>(null)
+
+  useEffect(() => {
+    getCreditsForCurrentUser().then(setCredits)
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -38,9 +43,25 @@ export default function NewProjectPage() {
       toast.success("Project created.")
       router.push(`/dashboard/workspace/${result.project.id}`)
     } else {
-      toast.error(result.error ?? "Failed to create project.")
+      if (result.code === "no_credits") {
+        toast("Your Starter Project is in use. Unlock more job applications with a one-time project pack—3, 10, or 25 projects, with more AI uses per project and exports included.", {
+          action: { label: "See project packs", onClick: () => router.push("/dashboard#pricing") },
+          duration: 12000
+        })
+      } else {
+        toast.error(result.error ?? "Failed to create project.")
+      }
     }
   }
+
+  const creditsLabel =
+    credits === null
+      ? null
+      : !credits.freeProjectUsed
+        ? "You have 1 free Starter project."
+        : credits.balance > 0
+          ? `You have ${credits.balance} project credit${credits.balance !== 1 ? "s" : ""}.`
+          : "You need a project pack to create another project."
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -49,6 +70,11 @@ export default function NewProjectPage() {
         <p className="text-muted-foreground mt-1">
           Add a job posting (paste or URL) to start optimizing your resume.
         </p>
+        {creditsLabel && (
+          <p className="text-muted-foreground mt-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+            {creditsLabel}
+          </p>
+        )}
       </div>
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="space-y-2">

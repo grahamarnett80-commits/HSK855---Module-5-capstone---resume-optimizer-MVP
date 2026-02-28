@@ -2,6 +2,9 @@ import {
   manageSubscriptionStatusChange,
   updateStripeCustomer
 } from "@/actions/stripe"
+import { grantCredits } from "@/lib/entitlements"
+import { db } from "@/db"
+import { packPurchases } from "@/db/schema/pack-purchases"
 import { stripe } from "@/lib/stripe"
 import { headers } from "next/headers"
 import Stripe from "stripe"
@@ -49,6 +52,7 @@ export async function POST(req: Request) {
 
         case "checkout.session.completed":
           await handleCheckoutSession(event)
+          await handleCheckoutSessionPayment(event)
           break
 
         default:
@@ -79,6 +83,22 @@ async function handleSubscriptionChange(event: Stripe.Event) {
     subscription.customer as string,
     productId
   )
+}
+
+async function handleCheckoutSessionPayment(event: Stripe.Event) {
+  const session = event.data.object as Stripe.Checkout.Session
+  if (session.mode !== "payment") return
+  const userId = session.client_reference_id
+  const packSize = session.metadata?.pack_size
+  if (!userId || !packSize) return
+  const size = parseInt(packSize, 10)
+  if (![3, 10, 25].includes(size)) return
+  await grantCredits(userId, size)
+  await db.insert(packPurchases).values({
+    userId,
+    packSize: size,
+    stripeSessionId: session.id
+  })
 }
 
 async function handleCheckoutSession(event: Stripe.Event) {

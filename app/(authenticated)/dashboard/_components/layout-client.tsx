@@ -39,6 +39,21 @@ function AutoCollapseSidebar() {
   return null
 }
 
+function RestoreSidebarState() {
+  const { setOpen } = useSidebar()
+
+  useEffect(() => {
+    const value = `; ${document.cookie}`
+    const parts = value.split("; sidebar_state=")
+    if (parts.length === 2) {
+      const saved = parts.pop()?.split(";").shift()
+      setOpen(saved === "true")
+    }
+  }, [setOpen])
+
+  return null
+}
+
 export default function DashboardClientLayout({
   children,
   userData
@@ -53,18 +68,10 @@ export default function DashboardClientLayout({
 }) {
   const pathname = usePathname()
 
-  // Read the sidebar state from cookie on initial load
-  const getCookieValue = (name: string) => {
-    if (typeof document === "undefined") return null
-    const value = `; ${document.cookie}`
-    const parts = value.split(`; ${name}=`)
-    if (parts.length === 2) return parts.pop()?.split(";").shift()
-    return null
-  }
-
+  // Use a fixed default so server and client render the same (avoids hydration mismatch).
+  // Cookie state is restored after mount in RestoreSidebarState.
   const isWorkspace = pathname.includes("/workspace/")
-  const savedState = getCookieValue("sidebar_state")
-  const defaultOpen = isWorkspace ? false : savedState === null ? true : savedState === "true"
+  const defaultOpen = !isWorkspace
 
   const getBreadcrumbs = () => {
     const paths = pathname.split("/").filter(Boolean)
@@ -162,6 +169,7 @@ export default function DashboardClientLayout({
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
       <AutoCollapseSidebar />
+      <RestoreSidebarState />
       <AppSidebar userData={userData} />
       <SidebarInset>
         <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">

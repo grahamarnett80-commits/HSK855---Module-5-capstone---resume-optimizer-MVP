@@ -1,10 +1,41 @@
-import { getProjectsByUserId } from "@/actions/projects"
+import { getProjectsByUserId, getCreditsForCurrentUser } from "@/actions/projects"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { FileText, Plus } from "lucide-react"
+import { ProjectPacksSection } from "./_components/project-packs-section"
+
+function CreditsDisplay({
+  balance,
+  freeProjectUsed
+}: {
+  balance: number
+  freeProjectUsed: boolean
+}) {
+  let label: string
+  if (!freeProjectUsed) {
+    label = "Starter project available"
+  } else if (balance > 0) {
+    label = `${balance} project credit${balance !== 1 ? "s" : ""}`
+  } else {
+    label = "Starter used · 0 credits"
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-muted-foreground text-sm font-medium">Available credits:</span>
+      <span className="text-muted-foreground rounded-md border bg-muted/50 px-2.5 py-1 text-sm">
+        {label}
+      </span>
+    </div>
+  )
+}
 
 export default async function Page() {
-  const projects = await getProjectsByUserId()
+  const [projects, creditsResult] = await Promise.all([
+    getProjectsByUserId(),
+    getCreditsForCurrentUser()
+  ])
+  // Always show credits area; use fallback if fetch returned null (e.g. auth delay)
+  const credits = creditsResult ?? { balance: 0, freeProjectUsed: true }
 
   return (
     <div className="space-y-6">
@@ -15,12 +46,15 @@ export default async function Page() {
             Optimize your resume for each job posting. Create a project to get started.
           </p>
         </div>
-        <Button asChild>
-          <Link href="/dashboard/projects/new" className="gap-2">
-            <Plus className="h-4 w-4" />
-            New project
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          <CreditsDisplay balance={credits.balance} freeProjectUsed={credits.freeProjectUsed} />
+          <Button asChild>
+            <Link href="/dashboard/projects/new" className="gap-2">
+              <Plus className="h-4 w-4" />
+              New project
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {projects.length === 0 ? (
@@ -52,6 +86,10 @@ export default async function Page() {
           ))}
         </ul>
       )}
+
+      <div className="mt-12 border-t pt-8">
+        <ProjectPacksSection />
+      </div>
     </div>
   )
 }

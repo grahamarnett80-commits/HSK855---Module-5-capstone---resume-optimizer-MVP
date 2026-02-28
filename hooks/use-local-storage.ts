@@ -1,26 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export function useLocalStorage<T>(key: string, initialValue: T) {
-  // State to store our value
-  // Pass initial state function to useState so logic is only executed once
-  const [storedValue, setStoredValue] = useState<T>(() => {
-    if (typeof window === "undefined") {
-      return initialValue;
-    }
+  // Use initialValue for first render so server and client match (avoids hydration mismatch).
+  const [storedValue, setStoredValue] = useState<T>(initialValue);
 
+  // After mount, read from localStorage and sync so we show saved preference.
+  useEffect(() => {
     try {
-      // Get from local storage by key
       const item = window.localStorage.getItem(key);
-      // Parse stored json or if none return initialValue
-      return item ? JSON.parse(item) : initialValue;
+      setStoredValue(item ? JSON.parse(item) : initialValue);
     } catch (error) {
-      // If error also return initialValue
       console.error(`Error reading localStorage key "${key}":`, error);
-      return initialValue;
     }
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only sync from storage on mount
+  }, [key]);
 
   // Return a wrapped version of useState's setter function that ...
   // ... persists the new value to localStorage.

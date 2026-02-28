@@ -1,4 +1,4 @@
-# Resume Optimizer MVP
+# OnTarget Resume Studio MVP
 
 Optimize your resume for specific job postings. IDE-style workspace: job posting, resume, AI suggestions, and chat. Match scoring and version history. Canadian resume standards; the AI asks clarifying questions and does not fabricate experience.
 

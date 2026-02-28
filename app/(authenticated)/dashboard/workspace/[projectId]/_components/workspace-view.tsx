@@ -16,6 +16,7 @@ import { getSuggestionsForVersion, generateSuggestionsForVersion, type Suggestio
 import { sendChatMessage, type SuggestionContext } from "@/actions/chat"
 import { createNewVersionFromContent } from "@/actions/resume-save-version"
 import { getVersionsByProjectId } from "@/actions/resume-versions"
+import { getExportAllowed, getProjectUsage } from "@/actions/projects"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,7 +55,13 @@ export function WorkspaceView({
   project,
   versions: initialVersions
 }: {
-  project: { id: string; name: string; jobPostingText: string }
+  project: {
+    id: string
+    name: string
+    jobPostingText: string
+    interactionCount: number
+    interactionCap: number
+  }
   versions: Version[]
 }) {
   const [versions, setVersions] = useState(initialVersions)
@@ -70,6 +77,18 @@ export function WorkspaceView({
   const [chatLoading, setChatLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  const [usage, setUsage] = useState({
+    count: project.interactionCount ?? 0,
+    cap: project.interactionCap ?? 25
+  })
+  const atCap = usage.count >= usage.cap
+  const atEightyPercent = usage.cap > 0 && usage.count >= Math.ceil(usage.cap * 0.8) && !atCap
+
+  const refreshUsage = useCallback(async () => {
+    const next = await getProjectUsage(project.id)
+    if (next) setUsage({ count: next.count, cap: next.cap })
+  }, [project.id])
 
   const [activeSuggestionId, setActiveSuggestionId] = useState<string | null>(null)
   const [undoStack, setUndoStack] = useState<{ suggestion: SuggestionItem; contentBefore: string }[]>([])
@@ -106,6 +125,17 @@ export function WorkspaceView({
   useEffect(() => {
     if (selectedVersionId) loadSuggestions()
   }, [selectedVersionId, loadSuggestions])
+
+  const eightyWarningShown = useRef(false)
+  useEffect(() => {
+    if (atEightyPercent && !eightyWarningShown.current) {
+      eightyWarningShown.current = true
+      toast(
+        `You've used ${usage.count} of ${usage.cap} AI uses for this project. A few left for suggestions and score refreshes—then you can keep editing and export with a project pack.`,
+        { duration: 8000 }
+      )
+    }
+  }, [atEightyPercent, usage.count, usage.cap])
 
   useEffect(() => {
     if (currentVersion) {
@@ -277,8 +307,15 @@ export function WorkspaceView({
     setSuggestionsLoading(false)
     if (res.success && res.suggestions) {
       setSuggestions(dedupeById(res.suggestions))
+      refreshUsage()
     } else {
       toast.error(res.error)
+      if (res.code === "interaction_cap") {
+        toast("You've used all AI uses for this project. You can keep editing your resume and copy text; score and new suggestions are paused. Add a project pack to get more projects and higher caps, or start a new project.", {
+          action: { label: "View project packs", onClick: () => window.open("/dashboard#pricing", "_self") },
+          duration: 12000
+        })
+      }
     }
   }
 
@@ -312,6 +349,7 @@ export function WorkspaceView({
     const res = await createNewVersionFromContent(project.id, contentToSave)
     setSaving(false)
     if (res.success && res.versionId) {
+      refreshUsage()
       const raw = await getVersionsByProjectId(project.id)
       const newVersions: Version[] = raw.map((v) => ({
         id: v.id,
@@ -377,7 +415,15 @@ export function WorkspaceView({
     return content
   }
 
-  function handleDownloadTxt() {
+  async function handleDownloadTxt() {
+    const { allowed } = await getExportAllowed()
+    if (!allowed) {
+      toast("Export (TXT, Word, PDF) is included with project packs. Get 3, 10, or 25 projects plus exports and more AI uses per project.", {
+        action: { label: "See project packs", onClick: () => window.open("/dashboard#pricing", "_self") },
+        duration: 10000
+      })
+      return
+    }
     const content = getContentForDownload()
     if (content === null) return
     const blob = new Blob([content], { type: "text/plain;charset=utf-8" })
@@ -386,6 +432,14 @@ export function WorkspaceView({
   }
 
   async function handleDownloadDocx() {
+    const { allowed } = await getExportAllowed()
+    if (!allowed) {
+      toast("Export (TXT, Word, PDF) is included with project packs. Get 3, 10, or 25 projects plus exports and more AI uses per project.", {
+        action: { label: "See project packs", onClick: () => window.open("/dashboard#pricing", "_self") },
+        duration: 10000
+      })
+      return
+    }
     const content = getContentForDownload()
     if (content === null) return
     try {
@@ -404,6 +458,14 @@ export function WorkspaceView({
   }
 
   async function handleDownloadPdf() {
+    const { allowed } = await getExportAllowed()
+    if (!allowed) {
+      toast("Export (TXT, Word, PDF) is included with project packs. Get 3, 10, or 25 projects plus exports and more AI uses per project.", {
+        action: { label: "See project packs", onClick: () => window.open("/dashboard#pricing", "_self") },
+        duration: 10000
+      })
+      return
+    }
     const content = getContentForDownload()
     if (content === null) return
     try {
@@ -532,8 +594,15 @@ export function WorkspaceView({
     if (res.success && res.reply) {
       setChatSessionMessages((prev) => [...prev, { role: "assistant", content: res.reply! }])
       setTimeout(() => chatScrollRef.current?.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior: "smooth" }), 100)
+      refreshUsage()
     } else {
       toast.error(res.error)
+      if (res.code === "interaction_cap") {
+        toast("You've used all AI uses for this project. You can keep editing your resume and copy text; score and new suggestions are paused. Add a project pack to get more projects and higher caps, or start a new project.", {
+          action: { label: "View project packs", onClick: () => window.open("/dashboard#pricing", "_self") },
+          duration: 12000
+        })
+      }
     }
   }
 
@@ -547,6 +616,14 @@ export function WorkspaceView({
             {currentVersion?.score != null ? `${currentVersion.score}%` : "—"}
           </span>
         </div>
+        <span className="text-muted-foreground text-sm">
+          AI uses this project: {usage.count} / {usage.cap}
+        </span>
+        {atCap && (
+          <span className="text-amber-600 dark:text-amber-400 text-sm">
+            Cap reached — editing available. Add a project pack for more.
+          </span>
+        )}
         {versions.length > 0 ? (
           <select
             className="rounded border bg-background px-2 py-1 text-sm"
@@ -716,7 +793,8 @@ export function WorkspaceView({
                   variant="ghost"
                   size="sm"
                   onClick={handleGenerateSuggestions}
-                  disabled={suggestionsLoading || !selectedVersionId}
+                  disabled={suggestionsLoading || !selectedVersionId || atCap}
+                  title={atCap ? "AI use cap reached for this project" : undefined}
                 >
                   {suggestionsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                   Generate
@@ -844,15 +922,16 @@ export function WorkspaceView({
           <div className="flex gap-2 border-t border-blue-300 p-3 dark:border-blue-700">
             <Input
               ref={chatInputRef}
-              placeholder="Ask about your resume..."
+              placeholder={atCap ? "AI use cap reached for this project" : "Ask about your resume..."}
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSendChat()}
+              disabled={atCap}
             />
             <Button
               size="icon"
               onClick={handleSendChat}
-              disabled={chatLoading || !chatInput.trim()}
+              disabled={chatLoading || !chatInput.trim() || atCap}
             >
               {chatLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>

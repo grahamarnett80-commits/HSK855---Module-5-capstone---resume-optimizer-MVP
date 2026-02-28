@@ -194,7 +194,11 @@ export async function createPackCheckoutUrl(
         error: `Pack not configured. Add STRIPE_PRICE_ID_${packSize}_PACK to .env.local with a one-time Price ID from the Stripe Dashboard (Products → your pack → Price).`
       }
 
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
+    // Use app URL so Stripe redirects to production, not localhost (Netlify sets URL when NEXT_PUBLIC_APP_URL is missing)
+    const baseUrl =
+      (process.env.NEXT_PUBLIC_APP_URL?.trim() && process.env.NEXT_PUBLIC_APP_URL) ||
+      (process.env.URL?.startsWith("http") ? process.env.URL.replace(/\/$/, "") : null) ||
+      "http://localhost:3000"
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       client_reference_id: userId,

@@ -14,7 +14,13 @@ export default async function DashboardLayout({
     redirect("/login")
   }
 
-  const customer = await getCustomerByUserId(user.id)
+  let customer = null
+  try {
+    customer = await getCustomerByUserId(user.id)
+  } catch (err) {
+    console.error("Dashboard layout: getCustomerByUserId failed", err)
+    // Continue with no customer so the page still loads (e.g. DB connection issue)
+  }
   // MVP: allow all authenticated users (free or pro)
   const membership = customer?.membership ?? "free"
 

@@ -13,7 +13,7 @@ import {
 } from "@/actions/resume-upload"
 import { scoreResumeVersion } from "@/actions/resume-score"
 import { getSuggestionsForVersion, generateSuggestionsForVersion, type SuggestionItem } from "@/actions/suggestions"
-import { getChatMessages, sendChatMessage, type SuggestionContext } from "@/actions/chat"
+import { sendChatMessage, type SuggestionContext } from "@/actions/chat"
 import { createNewVersionFromContent } from "@/actions/resume-save-version"
 import { getVersionsByProjectId } from "@/actions/resume-versions"
 import { Loader2, Send, Upload, Sparkles, Save, Check, X, CheckCheck, Undo2, MessageCircleQuestion } from "lucide-react"
@@ -61,7 +61,6 @@ export function WorkspaceView({
   )
   const [suggestions, setSuggestions] = useState<SuggestionItem[]>([])
   const [suggestionsLoading, setSuggestionsLoading] = useState(false)
-  const [chatMessages, setChatMessages] = useState<{ role: string; content: string }[]>([])
   const [chatInput, setChatInput] = useState("")
   const [chatLoading, setChatLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -90,18 +89,9 @@ export function WorkspaceView({
     }
   }, [selectedVersionId])
 
-  const loadChat = useCallback(async () => {
-    const res = await getChatMessages(project.id)
-    if (res.success && res.messages) setChatMessages(res.messages)
-  }, [project.id])
-
   useEffect(() => {
     if (selectedVersionId) loadSuggestions()
   }, [selectedVersionId, loadSuggestions])
-
-  useEffect(() => {
-    loadChat()
-  }, [loadChat])
 
   useEffect(() => {
     if (currentVersion) {
@@ -313,24 +303,42 @@ export function WorkspaceView({
   const chatScrollRef = useRef<HTMLDivElement>(null)
   const [chatSuggestionCtx, setChatSuggestionCtx] = useState<SuggestionContext>(null)
   const [chatOpen, setChatOpen] = useState(false)
+  const [chatSessionMessages, setChatSessionMessages] = useState<{ role: string; content: string }[]>([])
+  const [chatSourceSuggestionId, setChatSourceSuggestionId] = useState<string | null>(null)
 
-  function openChat(input: string, ctx: SuggestionContext = null) {
+  async function openChatForSuggestion(s: SuggestionItem) {
+    const ctx: SuggestionContext = {
+      text: s.text,
+      originalText: s.originalText,
+      suggestedText: s.suggestedText
+    }
     setChatSuggestionCtx(ctx)
-    setChatInput(input)
+    setChatSourceSuggestionId(s.id)
+    setChatInput("")
+    setChatSessionMessages([
+      { role: "assistant", content: `I'd like to help you review this suggestion:\n\n**"${s.text}"**\n\nThe proposed change is:\n• **Current:** ${s.originalText}\n• **Suggested:** ${s.suggestedText}\n\nHow can I help? I can:\n• Explain why this change improves your resume\n• Refine the wording to better fit your experience\n• Rewrite it with details you provide\n\nJust tell me what you'd like to do, or share more context about your experience and I'll draft an updated version.` }
+    ])
+    setChatOpen(true)
+    setTimeout(() => chatInputRef.current?.focus(), 150)
+  }
+
+  async function openChatForBracket(bracketText: string) {
+    setChatSuggestionCtx(null)
+    setChatSourceSuggestionId(null)
+    setChatInput("")
+    setChatSessionMessages([
+      { role: "assistant", content: `I see the placeholder **${bracketText}** in your resume. Let me help you fill it in.\n\nTo write something strong and specific, I'll need a few details from you. For example:\n• What was the project, task, or responsibility?\n• What actions did you take?\n• What was the result or impact?\n\nShare what you can and I'll draft the text for you.` }
+    ])
     setChatOpen(true)
     setTimeout(() => chatInputRef.current?.focus(), 150)
   }
 
   function handleAskAboutSuggestion(s: SuggestionItem) {
-    openChat(`Regarding the suggestion: "${s.text}" — `, {
-      text: s.text,
-      originalText: s.originalText,
-      suggestedText: s.suggestedText
-    })
+    openChatForSuggestion(s)
   }
 
   function handleAskAboutBracket(bracketText: string) {
-    openChat(`Help me fill in the placeholder ${bracketText} — what should I write here?`)
+    openChatForBracket(bracketText)
   }
 
   type ChatChange = { originalText: string; suggestedText: string }
@@ -369,7 +377,11 @@ export function WorkspaceView({
           contentBefore
         }
       ])
-      toast.success("Change applied from chat.", {
+      if (chatSourceSuggestionId) {
+        setSuggestions((prev) => prev.filter((s) => s.id !== chatSourceSuggestionId))
+        setChatSourceSuggestionId(null)
+      }
+      toast.success("Change applied — suggestion resolved.", {
         action: { label: "Undo", onClick: () => handleUndoLast() },
         duration: 8000
       })
@@ -383,15 +395,11 @@ export function WorkspaceView({
     if (!text || chatLoading) return
     setChatInput("")
     setChatLoading(true)
+    setChatSessionMessages((prev) => [...prev, { role: "user", content: text }])
     const res = await sendChatMessage(project.id, text, chatSuggestionCtx)
-    setChatSuggestionCtx(null)
     setChatLoading(false)
     if (res.success && res.reply) {
-      setChatMessages((prev) => [
-        ...prev,
-        { role: "user", content: text },
-        { role: "assistant", content: res.reply! }
-      ])
+      setChatSessionMessages((prev) => [...prev, { role: "assistant", content: res.reply! }])
       setTimeout(() => chatScrollRef.current?.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior: "smooth" }), 100)
     } else {
       toast.error(res.error)
@@ -638,7 +646,7 @@ export function WorkspaceView({
           <div className="flex items-center justify-between border-b border-blue-400 bg-blue-600 px-3 py-2 rounded-t-lg dark:border-blue-500 dark:bg-blue-800">
             <span className="text-xs font-bold uppercase tracking-wide text-white">Chat</span>
             <button
-              onClick={() => { setChatOpen(false); setChatSuggestionCtx(null) }}
+              onClick={() => { setChatOpen(false); setChatSuggestionCtx(null); setChatSourceSuggestionId(null) }}
               className="rounded p-0.5 text-white hover:bg-blue-500"
               aria-label="Close chat"
             >
@@ -646,7 +654,7 @@ export function WorkspaceView({
             </button>
           </div>
           <div ref={chatScrollRef} className="flex-1 overflow-auto space-y-2 p-3 text-sm">
-            {chatMessages.map((m, i) => {
+            {chatSessionMessages.map((m, i) => {
               const change = m.role === "assistant" ? parseChatChange(m.content) : null
               const displayText = m.role === "assistant" ? stripSuggestionBlock(m.content) : m.content
               return (
@@ -673,15 +681,6 @@ export function WorkspaceView({
               )
             })}
           </div>
-          {chatSuggestionCtx && (
-            <div className="mx-3 flex items-center gap-1 rounded bg-blue-500/10 px-2 py-1 text-xs text-blue-700 dark:text-blue-400">
-              <MessageCircleQuestion className="h-3 w-3 shrink-0" />
-              <span className="truncate">Asking about: {chatSuggestionCtx.text}</span>
-              <button onClick={() => setChatSuggestionCtx(null)} className="ml-auto shrink-0 hover:text-foreground">
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          )}
           <div className="flex gap-2 border-t border-blue-300 p-3 dark:border-blue-700">
             <Input
               ref={chatInputRef}

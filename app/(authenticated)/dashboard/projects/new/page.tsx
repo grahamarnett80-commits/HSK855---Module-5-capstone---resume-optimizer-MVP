@@ -54,6 +54,12 @@ export default function NewProjectPage() {
       toast.error("Please paste the job posting or enter a URL.")
       return
     }
+    if (!jobPostingText.trim()) {
+      toast.warning(
+        "Please add the job posting text first. Click \"Fetch from URL\" or paste the job description in the text area below."
+      )
+      return
+    }
     setLoading(true)
     const result = await createProject({
       name: name.trim(),

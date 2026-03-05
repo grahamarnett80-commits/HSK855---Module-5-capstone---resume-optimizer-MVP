@@ -2,6 +2,7 @@ import { getProjectsByUserId, getCreditsForCurrentUser } from "@/actions/project
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { FileText, Plus } from "lucide-react"
+import { DeleteProjectButton } from "./_components/delete-project-button"
 import { ProjectPacksSection } from "./_components/project-packs-section"
 
 function CreditsDisplay({
@@ -72,16 +73,19 @@ export default async function Page() {
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {projects.map((p) => (
             <li key={p.id}>
-              <Link
-                href={`/dashboard/workspace/${p.id}`}
-                className="block rounded-lg border p-4 transition-colors hover:bg-muted/50"
-              >
-                <h3 className="font-medium">{p.name}</h3>
-                <p className="text-muted-foreground mt-1 text-sm">
-                  {p.jobPostingText ? "Job posting added" : "No job posting yet"} · Updated{" "}
-                  {new Date(p.updatedAt).toLocaleDateString()}
-                </p>
-              </Link>
+              <div className="relative rounded-lg border p-4 transition-colors hover:bg-muted/50">
+                <Link
+                  href={`/dashboard/workspace/${p.id}`}
+                  className="block"
+                >
+                  <h3 className="font-medium pr-8">{p.name}</h3>
+                  <p className="text-muted-foreground mt-1 text-sm">
+                    {p.jobPostingText ? "Job posting added" : "No job posting yet"} · Updated{" "}
+                    {new Date(p.updatedAt).toLocaleDateString()}
+                  </p>
+                </Link>
+                <DeleteProjectButton projectId={p.id} projectName={p.name} />
+              </div>
             </li>
           ))}
         </ul>

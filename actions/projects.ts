@@ -45,6 +45,81 @@ export async function getProjectById(projectId: string): Promise<SelectProject |
   return project ?? null
 }
 
+const JOB_POSTING_FETCH_TIMEOUT_MS = 15_000
+const JOB_POSTING_MAX_CHARS = 80_000
+
+/** Fetch a URL and extract plain text from HTML for use as job posting content. */
+export async function fetchJobPostingFromUrl(url: string): Promise<{
+  success: boolean
+  text?: string
+  error?: string
+}> {
+  const trimmed = url.trim()
+  if (!trimmed) return { success: false, error: "Please enter a URL." }
+  let parsed: URL
+  try {
+    parsed = new URL(trimmed)
+  } catch {
+    return { success: false, error: "Invalid URL." }
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return { success: false, error: "URL must be http or https." }
+  }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), JOB_POSTING_FETCH_TIMEOUT_MS)
+  try {
+    const res = await fetch(trimmed, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (compatible; JobPostingBot/1.0; +https://github.com/resume-optimizer)"
+      },
+      redirect: "follow"
+    })
+    clearTimeout(timeout)
+    if (!res.ok) {
+      return { success: false, error: `Could not load page (${res.status}). Try copying the job description and pasting it instead.` }
+    }
+    const html = await res.text()
+    const text = htmlToPlainText(html).slice(0, JOB_POSTING_MAX_CHARS)
+    if (!text.trim()) {
+      return { success: false, error: "No text could be extracted from this page. Try copying and pasting the job description." }
+    }
+    return { success: true, text }
+  } catch (err) {
+    clearTimeout(timeout)
+    if (err instanceof Error) {
+      if (err.name === "AbortError")
+        return { success: false, error: "Request timed out. Try copying and pasting the job description." }
+      return { success: false, error: err.message || "Failed to fetch URL." }
+    }
+    return { success: false, error: "Failed to fetch URL." }
+  }
+}
+
+function htmlToPlainText(html: string): string {
+  let s = html
+  // Remove script and style and their contents
+  s = s.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+  s = s.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+  // Block elements: replace with newline so we get paragraph breaks
+  s = s.replace(/<\/?(?:p|div|br|tr|li|h[1-6])\b[^>]*>/gi, "\n")
+  // Remove all remaining tags
+  s = s.replace(/<[^>]+>/g, " ")
+  // Decode common entities
+  s = s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&nbsp;/g, " ")
+  // Collapse runs of whitespace and trim
+  s = s.replace(/\s+/g, " ").trim()
+  return s
+}
+
 export async function createProject(input: {
   name: string
   jobPostingUrl?: string
@@ -57,6 +132,21 @@ export async function createProject(input: {
 }> {
   const user = await currentUser()
   if (!user) return { success: false, error: "Not authenticated" }
+
+  let jobPostingText = input.jobPostingText?.trim() ?? ""
+  const jobPostingUrl = input.jobPostingUrl?.trim() ?? ""
+
+  if (!jobPostingText && jobPostingUrl) {
+    const fetched = await fetchJobPostingFromUrl(jobPostingUrl)
+    if (!fetched.success) {
+      return { success: false, error: fetched.error ?? "Could not fetch job posting from URL." }
+    }
+    jobPostingText = fetched.text ?? ""
+  }
+
+  if (!jobPostingText && !jobPostingUrl) {
+    return { success: false, error: "Please paste the job posting or enter a URL." }
+  }
 
   let customer = await getCustomerByUserId(user.id)
   if (!customer) {
@@ -76,8 +166,8 @@ export async function createProject(input: {
       .values({
         userId: user.id,
         name: input.name,
-        jobPostingUrl: input.jobPostingUrl ?? null,
-        jobPostingText: input.jobPostingText ?? null,
+        jobPostingUrl: jobPostingUrl || null,
+        jobPostingText: jobPostingText || null,
         interactionCap: 25,
         interactionCount: 0
       })
@@ -110,8 +200,8 @@ export async function createProject(input: {
       .values({
         userId: user.id,
         name: input.name,
-        jobPostingUrl: input.jobPostingUrl ?? null,
-        jobPostingText: input.jobPostingText ?? null,
+        jobPostingUrl: jobPostingUrl || null,
+        jobPostingText: jobPostingText || null,
         interactionCap: cap,
         interactionCount: 0
       })
@@ -158,5 +248,23 @@ export async function updateProject(
   } catch (e) {
     console.error(e)
     return { success: false, error: "Failed to update project" }
+  }
+}
+
+/** Delete a project. Does not change the user's project credit balance. */
+export async function deleteProject(projectId: string): Promise<{
+  success: boolean
+  error?: string
+}> {
+  const user = await currentUser()
+  if (!user) return { success: false, error: "Not authenticated" }
+  const project = await getProjectById(projectId)
+  if (!project) return { success: false, error: "Project not found" }
+  try {
+    await db.delete(projectsTable).where(eq(projectsTable.id, projectId))
+    return { success: true }
+  } catch (e) {
+    console.error(e)
+    return { success: false, error: "Failed to delete project" }
   }
 }

@@ -1,10 +1,15 @@
 "use client"
 
-import { createProject, getCreditsForCurrentUser } from "@/actions/projects"
+import {
+  createProject,
+  fetchJobPostingFromUrl,
+  getCreditsForCurrentUser
+} from "@/actions/projects"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Loader2 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
@@ -16,11 +21,28 @@ export default function NewProjectPage() {
   const [jobPostingUrl, setJobPostingUrl] = useState("")
   const [jobPostingText, setJobPostingText] = useState("")
   const [loading, setLoading] = useState(false)
+  const [fetchingUrl, setFetchingUrl] = useState(false)
   const [credits, setCredits] = useState<{ balance: number; freeProjectUsed: boolean } | null>(null)
 
   useEffect(() => {
     getCreditsForCurrentUser().then(setCredits)
   }, [])
+
+  async function handleFetchFromUrl() {
+    if (!jobPostingUrl.trim()) {
+      toast.error("Enter a job posting URL first.")
+      return
+    }
+    setFetchingUrl(true)
+    const result = await fetchJobPostingFromUrl(jobPostingUrl.trim())
+    setFetchingUrl(false)
+    if (result.success && result.text) {
+      setJobPostingText(result.text)
+      toast.success("Job posting text loaded. You can edit it below before creating the project.")
+    } else {
+      toast.error(result.error ?? "Could not fetch from URL.")
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -87,14 +109,31 @@ export default function NewProjectPage() {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="url">Job posting URL (optional)</Label>
-          <Input
-            id="url"
-            type="url"
-            placeholder="https://..."
-            value={jobPostingUrl}
-            onChange={(e) => setJobPostingUrl(e.target.value)}
-          />
+          <Label htmlFor="url">Job posting URL</Label>
+          <div className="flex gap-2">
+            <Input
+              id="url"
+              type="url"
+              placeholder="https://..."
+              value={jobPostingUrl}
+              onChange={(e) => setJobPostingUrl(e.target.value)}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleFetchFromUrl}
+              disabled={fetchingUrl || !jobPostingUrl.trim()}
+            >
+              {fetchingUrl ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Fetch from URL"
+              )}
+            </Button>
+          </div>
+          <p className="text-muted-foreground text-xs">
+            Paste a URL and click Fetch to load the job description, or paste the text below.
+          </p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="paste">Job posting text</Label>
@@ -108,7 +147,7 @@ export default function NewProjectPage() {
           />
         </div>
         <div className="flex gap-2">
-          <Button type="submit" disabled={loading}>
+          <Button type="submit" disabled={loading || fetchingUrl}>
             {loading ? "Creating…" : "Create project"}
           </Button>
           <Button type="button" variant="outline" asChild>
